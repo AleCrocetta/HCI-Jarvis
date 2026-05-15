@@ -6,3 +6,4 @@ before starting to vibe code always remember to pull the lastest:
 
 git pull
 
+"hi guys, can you see this message?" - sen
