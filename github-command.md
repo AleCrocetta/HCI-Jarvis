@@ -6,4 +6,12 @@ before starting to vibe code always remember to pull the lastest:
 
 git pull
 
+gi9sajpiansknsakak
+saoinsaionscaioncasas
+sasa
+as
+as
+a
+a
+a
 "hi guys, can you see this message?" - sen
