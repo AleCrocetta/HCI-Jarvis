@@ -6,12 +6,16 @@ before starting to vibe code always remember to pull the lastest:
 
 git pull
 
-gi9sajpiansknsakak
-saoinsaionscaioncasas
-sasa
-as
-as
-a
-a
-a
-"hi guys, can you see this message?" - sen
+but if you have soma local changes you want to keep first do:
+
+git stash
+
+then pull the branch:
+
+git pull
+
+then you do:
+
+git stash pop
+
+finally fix the conflicts 
