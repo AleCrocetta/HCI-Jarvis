@@ -5,7 +5,6 @@ git push
 before starting to vibe code always remember to pull the lastest:
 
 git pull
-
 but if you have soma local changes you want to keep first do:
 
 git stash
