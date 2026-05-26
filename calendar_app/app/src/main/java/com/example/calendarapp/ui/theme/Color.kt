@@ -12,3 +12,7 @@ val PrimaryBlue = Color(0xFF4A90E2) // Fallback for other things
 val White = Color(0xFFFFFFFF)
 val GrayBorder = Color(0xFFD0D7E1)
 val ErrorRed = Color(0xFFE74C3C)
+val DarkSlate = Color(0xFF1E293B)
+val LightSlate = Color(0xFF94A3B8)
+val EventBackground = Color(0xFFE2E8F0)
+val OutlineColor = Color(0xFFCBD5E1)

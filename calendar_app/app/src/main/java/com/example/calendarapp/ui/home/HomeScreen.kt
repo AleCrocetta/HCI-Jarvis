@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import com.example.calendarapp.model.CalendarEvent
 import com.example.calendarapp.ui.theme.DarkBlue
 import com.example.calendarapp.ui.theme.LightBlueBg
@@ -42,22 +44,60 @@ fun HomeScreen(
     onViewAllChanged: (Boolean) -> Unit,
     selectedMonth: String,
     onMonthSelected: (String) -> Unit,
+    selectedYear: Int,
+    onYearSelected: (Int) -> Unit,
     onAddEventClick: () -> Unit
 ) {
-    // Filter events dynamically based on day, month and search query
+    // Filter events dynamically based on day, month, year and search query
     val filteredEvents = events.filter { event ->
+        val yearMatches = event.year == selectedYear
         val monthMatches = event.month.equals(selectedMonth, ignoreCase = true)
         val dayMatches = viewAllEvents || event.day == selectedDay
         val searchMatches = searchQuery.isBlank() || event.title.contains(searchQuery, ignoreCase = true)
-        monthMatches && dayMatches && searchMatches
+        yearMatches && monthMatches && dayMatches && searchMatches
     }
 
-    var showNotificationsDialog by remember { mutableStateOf(false) }
+    var showMemoryDialog by remember { mutableStateOf(false) }
+    val userPreferences = remember { 
+        mutableStateListOf(
+            "Schedule training in the morning",
+            "Gym sessions at 8:00 AM",
+            "Meetings must have video link",
+            "Highlight flight events with indicator"
+        )
+    }
+    var newPreferenceText by remember { mutableStateOf("") }
+    
     var showMonthDialog by remember { mutableStateOf(false) }
+
+    val monthsList = listOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    )
+    
+    fun onPreviousMonth() {
+        val currentIndex = monthsList.indexOf(selectedMonth)
+        if (currentIndex == 0) {
+            onMonthSelected("December")
+            onYearSelected(selectedYear - 1)
+        } else {
+            onMonthSelected(monthsList[currentIndex - 1])
+        }
+    }
+    
+    fun onNextMonth() {
+        val currentIndex = monthsList.indexOf(selectedMonth)
+        if (currentIndex == 11) {
+            onMonthSelected("January")
+            onYearSelected(selectedYear + 1)
+        } else {
+            onMonthSelected(monthsList[currentIndex + 1])
+        }
+    }
 
     Scaffold(
         bottomBar = {
-            BottomNavBar(activeTab = activeTab, onTabSelected = onTabSelected)
+            JarvisBottomBar()
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -91,16 +131,20 @@ fun HomeScreen(
                 Column {
                     TopBar(
                         selectedMonth = selectedMonth,
+                        selectedYear = selectedYear,
                         onMonthClick = { showMonthDialog = true },
                         searchQuery = searchQuery,
                         onSearchQueryChanged = onSearchQueryChanged,
-                        onNotificationsClick = { showNotificationsDialog = true }
+                        onBrainClick = { showMemoryDialog = true }
                     )
                     CalendarGrid(
                         selectedDay = selectedDay,
                         onDaySelected = onDaySelected,
                         events = events,
-                        selectedMonth = selectedMonth
+                        selectedMonth = selectedMonth,
+                        selectedYear = selectedYear,
+                        onPreviousMonth = { onPreviousMonth() },
+                        onNextMonth = { onNextMonth() }
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                 }
@@ -109,9 +153,7 @@ fun HomeScreen(
             // Bottom Section with Events
             TodaySection(
                 selectedDay = selectedDay,
-                eventCount = filteredEvents.size,
-                viewAllEvents = viewAllEvents,
-                onViewAllToggle = { onViewAllChanged(!viewAllEvents) }
+                eventCount = filteredEvents.size
             )
             
             EventList(
@@ -123,25 +165,125 @@ fun HomeScreen(
         }
     }
 
-    // Notification Dialog
-    if (showNotificationsDialog) {
+    // Memory & Preferences Area Dialog
+    if (showMemoryDialog) {
         AlertDialog(
-            onDismissRequest = { showNotificationsDialog = false },
-            title = { Text("Upcoming Notifications", color = DarkBlue, fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showMemoryDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add, // Placeholder, custom psychology icon imported in TopBar but we can use fallback or custom Brain drawing!
+                        contentDescription = null,
+                        tint = DarkBlue,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Memory Area",
+                        color = DarkBlue,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
+                }
+            },
             text = {
-                Column {
-                    Text("Here are your upcoming calendar alerts:", color = TextGray, fontSize = 14.sp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Customize your AI calendar preferences. Jarvis uses these to assist you:",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                    
                     Spacer(modifier = Modifier.height(16.dp))
-                    NotificationRow("Reminder: MORNING WALK starts soon!", "06:30 AM")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    NotificationRow("Workout: GYM TIME!", "08:00 AM")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    NotificationRow("Meeting: PILOTS MEETING", "10:00 AM")
+                    
+                    // Add Preference Input
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newPreferenceText,
+                            onValueChange = { newPreferenceText = it },
+                            placeholder = { Text("Add preference...", color = TextGray, fontSize = 12.sp) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = DarkBlue,
+                                unfocusedBorderColor = TextGray,
+                                focusedContainerColor = LightGrayBg,
+                                unfocusedContainerColor = LightGrayBg
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (newPreferenceText.isNotBlank()) {
+                                    userPreferences.add(newPreferenceText)
+                                    newPreferenceText = ""
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Text("Save", color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Preferences List
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        userPreferences.forEachIndexed { index, pref ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(LightGrayBg)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = pref,
+                                    color = DarkBlue,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "❌",
+                                    fontSize = 10.sp,
+                                    modifier = Modifier
+                                        .clickable { userPreferences.removeAt(index) }
+                                        .padding(4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showNotificationsDialog = false }) {
-                    Text("Dismiss", color = DarkBlue, fontWeight = FontWeight.Bold)
+                TextButton(onClick = { showMemoryDialog = false }) {
+                    Text("Done", color = DarkBlue, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = White,
@@ -151,9 +293,38 @@ fun HomeScreen(
 
     // Month Selector Dialog
     if (showMonthDialog) {
+        var tempYear by remember { mutableStateOf(selectedYear) }
         AlertDialog(
             onDismissRequest = { showMonthDialog = false },
-            title = { Text("Select Month", color = DarkBlue, fontWeight = FontWeight.Bold) },
+            title = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Select Date", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        IconButton(onClick = { tempYear-- }) {
+                            Text("<", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = tempYear.toString(),
+                            color = DarkBlue,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        IconButton(onClick = { tempYear++ }) {
+                            Text(">", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        }
+                    }
+                }
+            },
             text = {
                 val months = listOf(
                     listOf("January", "February", "March"),
@@ -162,7 +333,6 @@ fun HomeScreen(
                     listOf("October", "November", "December")
                 )
                 Column {
-                    Spacer(modifier = Modifier.height(8.dp))
                     months.forEach { rowMonths ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -174,17 +344,18 @@ fun HomeScreen(
                                         .weight(1f)
                                         .padding(4.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selectedMonth == month) LightBlueBg else Color.Transparent)
+                                        .background(if (selectedMonth == month && selectedYear == tempYear) LightBlueBg else Color.Transparent)
                                         .clickable {
                                             onMonthSelected(month)
+                                            onYearSelected(tempYear)
                                             showMonthDialog = false
                                         }
                                         .padding(vertical = 12.dp, horizontal = 4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = month.take(3), // Jan, Feb, Mar...
-                                        color = if (selectedMonth == month) DarkBlue else TextGray,
+                                        text = month.take(3), // Jan, Feb...
+                                        color = if (selectedMonth == month && selectedYear == tempYear) DarkBlue else TextGray,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp
                                     )

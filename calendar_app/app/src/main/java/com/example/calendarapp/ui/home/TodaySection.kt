@@ -18,9 +18,7 @@ import com.example.calendarapp.ui.theme.White
 @Composable
 fun TodaySection(
     selectedDay: Int,
-    eventCount: Int,
-    viewAllEvents: Boolean,
-    onViewAllToggle: () -> Unit
+    eventCount: Int
 ) {
     val weekday = when ((6 + (selectedDay - 1)) % 7) {
         0 -> "Sunday"
@@ -44,7 +42,7 @@ fun TodaySection(
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Text(
-            text = if (viewAllEvents) "ALL EVENTS" else "SELECTED DAY",
+            text = "SELECTED DAY",
             color = TextGray,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
@@ -60,7 +58,7 @@ fun TodaySection(
         ) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = if (viewAllEvents) "All" else selectedDay.toString(),
+                    text = selectedDay.toString(),
                     color = DarkBlue,
                     fontWeight = FontWeight.Bold,
                     fontSize = 32.sp
@@ -74,24 +72,11 @@ fun TodaySection(
                         fontSize = 14.sp
                     )
                     Text(
-                        text = if (viewAllEvents) "Entire month" else weekday,
+                        text = weekday,
                         color = TextGray,
                         fontSize = 12.sp
                     )
                 }
-            }
-            
-            Button(
-                onClick = onViewAllToggle,
-                colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
-                shape = RoundedCornerShape(50)
-            ) {
-                Text(
-                    text = if (viewAllEvents) "Show Day" else "View all",
-                    color = White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
             }
         }
     }

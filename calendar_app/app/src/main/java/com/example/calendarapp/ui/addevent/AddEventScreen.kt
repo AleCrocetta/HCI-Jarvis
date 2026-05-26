@@ -36,12 +36,13 @@ import com.example.calendarapp.ui.theme.White
 fun AddEventScreen(
     selectedDay: Int,
     selectedMonth: String,
-    onSaveEvent: (title: String, time: String, chosenDay: Int, link: String, fileNames: List<String>) -> Unit,
+    selectedYear: Int,
+    onSaveEvent: (title: String, time: String, chosenDay: Int, link: String, fileNames: List<String>, year: Int) -> Unit,
     onBack: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var chosenDay by remember { mutableIntStateOf(selectedDay) }
-    var date by remember { mutableStateOf("$selectedMonth $selectedDay, 2025") }
+    var date by remember { mutableStateOf("$selectedMonth $selectedDay, $selectedYear") }
     var time by remember { mutableStateOf("10:00 AM - 11:00 AM") }
     var link by remember { mutableStateOf("") }
     var fileNames by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -62,8 +63,8 @@ fun AddEventScreen(
     }
 
     // Sync date display when chosenDay changes
-    LaunchedEffect(chosenDay, selectedMonth) {
-        date = "$selectedMonth $chosenDay, 2025"
+    LaunchedEffect(chosenDay, selectedMonth, selectedYear) {
+        date = "$selectedMonth $chosenDay, $selectedYear"
     }
 
     Scaffold(
@@ -271,7 +272,7 @@ fun AddEventScreen(
                     if (title.isBlank()) {
                         isTitleError = true
                     } else {
-                        onSaveEvent(title, time, chosenDay, link, fileNames)
+                        onSaveEvent(title, time, chosenDay, link, fileNames, selectedYear)
                     }
                 },
                 modifier = Modifier
@@ -346,9 +347,21 @@ fun AddEventScreen(
             title = { Text("Select Day", color = DarkBlue, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
-                    Text("Select a day in $selectedMonth 2025:", color = TextGray, fontSize = 14.sp)
+                    Text("Select a day in $selectedMonth $selectedYear:", color = TextGray, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(16.dp))
-                    val days = (1..28).toList()
+                    val daysInMonth = remember(selectedMonth, selectedYear) {
+                        val cal = java.util.Calendar.getInstance().apply {
+                            set(java.util.Calendar.YEAR, selectedYear)
+                            set(java.util.Calendar.MONTH, when (selectedMonth.lowercase(java.util.Locale.US)) {
+                                "january" -> 0; "february" -> 1; "march" -> 2; "april" -> 3; "may" -> 4; "june" -> 5
+                                "july" -> 6; "august" -> 7; "september" -> 8; "october" -> 9; "november" -> 10; "december" -> 11
+                                else -> 0
+                            })
+                            set(java.util.Calendar.DAY_OF_MONTH, 1)
+                        }
+                        cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+                    }
+                    val days = (1..daysInMonth).toList()
                     val chunkedDays = days.chunked(7)
                     Column {
                         chunkedDays.forEach { rowDays ->

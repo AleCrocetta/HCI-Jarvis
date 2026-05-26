@@ -10,6 +10,10 @@ import androidx.compose.material.icons.filled.AirplanemodeActive
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,61 +22,91 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import com.example.calendarapp.model.CalendarEvent
 import com.example.calendarapp.ui.theme.*
+
+private fun monthNameToIndex(monthName: String): Int {
+    return when (monthName.lowercase(java.util.Locale.US)) {
+        "january" -> 0
+        "february" -> 1
+        "march" -> 2
+        "april" -> 3
+        "may" -> 4
+        "june" -> 5
+        "july" -> 6
+        "august" -> 7
+        "september" -> 8
+        "october" -> 9
+        "november" -> 10
+        "december" -> 11
+        else -> 0
+    }
+}
 
 @Composable
 fun CalendarGrid(
     selectedDay: Int,
     onDaySelected: (Int) -> Unit,
     events: List<CalendarEvent>,
-    selectedMonth: String
+    selectedMonth: String,
+    selectedYear: Int,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit
 ) {
-    val daysOfWeek = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+    val daysOfWeek = listOf("Sa", "Su", "Mo", "Tu", "We", "Th", "Fr")
     
-    val daysInMonth = when (selectedMonth) {
-        "January", "March", "May", "July", "August", "October", "December" -> 31
-        "April", "June", "September", "November" -> 30
-        "February" -> 28
-        else -> 28
+    val cal = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.YEAR, selectedYear)
+        set(java.util.Calendar.MONTH, monthNameToIndex(selectedMonth))
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
     }
+    val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
 
-    val startDayOffset = when (selectedMonth) {
-        "January" -> 2 // Wednesday
-        "February" -> 5 // Saturday
-        "March" -> 5 // Saturday
-        "April" -> 1 // Tuesday
-        "May" -> 3 // Thursday
-        "June" -> 6 // Sunday
-        "July" -> 1 // Tuesday
-        "August" -> 4 // Friday
-        "September" -> 0 // Monday
-        "October" -> 2 // Wednesday
-        "November" -> 5 // Saturday
-        "December" -> 0 // Monday
-        else -> 5
-    }
+    // Sunday = 1, Monday = 2, Tuesday = 3, Wednesday = 4, Thursday = 5, Friday = 6, Saturday = 7.
+    // Starting on Saturday:
+    // Saturday (7) -> 0
+    // Sunday (1) -> 1
+    // ...
+    // Friday (6) -> 6
+    // Formula: dayOfWeek % 7
+    val dayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK)
+    val startDayOffset = dayOfWeek % 7
 
-    val previousMonthDays = when (selectedMonth) {
-        "January" -> listOf(30, 31)
-        "February" -> listOf(27, 28, 29, 30, 31)
-        "March" -> listOf(24, 25, 26, 27, 28)
-        "April" -> listOf(31)
-        "May" -> listOf(28, 29, 30)
-        "June" -> listOf(26, 27, 28, 29, 30, 31)
-        "July" -> listOf(30)
-        "August" -> listOf(28, 29, 30, 31)
-        "September" -> emptyList()
-        "October" -> listOf(29, 30)
-        "November" -> listOf(27, 28, 29, 30, 31)
-        "December" -> emptyList()
-        else -> listOf(27, 28, 29, 30, 31)
+    val prevCal = (cal.clone() as java.util.Calendar).apply {
+        add(java.util.Calendar.MONTH, -1)
     }
+    val daysInPrevMonth = prevCal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+    
+    val previousMonthDays = if (startDayOffset > 0) {
+        ((daysInPrevMonth - startDayOffset + 1)..daysInPrevMonth).toList()
+    } else {
+        emptyList()
+    }
+    
+    var offsetX by remember { mutableStateOf(0f) }
     
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
+            .pointerInput(selectedMonth, selectedYear) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offsetX = 0f },
+                    onDragEnd = {
+                        if (offsetX > 150f) {
+                            onPreviousMonth()
+                        } else if (offsetX < -150f) {
+                            onNextMonth()
+                        }
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        offsetX += dragAmount
+                    }
+                )
+            }
     ) {
         // Days of week header
         Row(
@@ -121,8 +155,8 @@ fun CalendarGrid(
                             val dayNum = currentDay
                             val isSelected = selectedDay == dayNum
                             
-                            // Check events for indicators dynamically matching BOTH day AND selectedMonth!
-                            val dayEvents = events.filter { it.day == dayNum && it.month.equals(selectedMonth, ignoreCase = true) }
+                            // Check events for indicators dynamically matching BOTH day, selectedMonth AND selectedYear!
+                            val dayEvents = events.filter { it.day == dayNum && it.month.equals(selectedMonth, ignoreCase = true) && it.year == selectedYear }
                             val hasFlight = dayEvents.any { it.title.contains("FLIGHT", ignoreCase = true) || it.title.contains("TRIP", ignoreCase = true) || it.title.contains("PLANE", ignoreCase = true) }
                             val hasBorder = dayEvents.isNotEmpty() && !hasFlight
                             

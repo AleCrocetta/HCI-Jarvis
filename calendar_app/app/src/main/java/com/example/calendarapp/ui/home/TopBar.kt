@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -25,10 +25,11 @@ import com.example.calendarapp.ui.theme.TextGray
 @Composable
 fun TopBar(
     selectedMonth: String,
+    selectedYear: Int,
     onMonthClick: () -> Unit,
     searchQuery: String,
     onSearchQueryChanged: (String) -> Unit,
-    onNotificationsClick: () -> Unit
+    onBrainClick: () -> Unit
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
 
@@ -83,7 +84,7 @@ fun TopBar(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = selectedMonth,
+                        text = "$selectedMonth $selectedYear",
                         color = DarkBlue,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp
@@ -92,19 +93,20 @@ fun TopBar(
             }
             
             // Icons
-            Row {
-                IconButton(onClick = onNotificationsClick) {
-                    Icon(
-                        imageVector = Icons.Default.NotificationsNone,
-                        contentDescription = "Notifications",
-                        tint = TextGray
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { isSearchExpanded = true }) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
                         tint = TextGray
+                    )
+                }
+                
+                IconButton(onClick = onBrainClick) {
+                    Image(
+                        painter = painterResource(id = com.example.calendarapp.R.drawable.ic_brain),
+                        contentDescription = "Memory Preferences",
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }

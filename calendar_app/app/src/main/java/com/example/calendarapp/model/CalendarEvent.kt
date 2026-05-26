@@ -6,6 +6,7 @@ data class CalendarEvent(
     val id: String = UUID.randomUUID().toString(),
     val day: Int,
     val month: String = "February",
+    val year: Int = 2026,
     val title: String,
     val time: String,
     val link: String? = null,
