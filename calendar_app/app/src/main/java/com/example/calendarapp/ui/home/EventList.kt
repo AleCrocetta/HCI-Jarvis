@@ -15,9 +15,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.*
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -40,7 +45,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun EventList(
     events: List<CalendarEvent>,
-    onDeleteEvent: (CalendarEvent) -> Unit
+    onDeleteEvent: (CalendarEvent) -> Unit,
+    onCompleteEvent: (CalendarEvent) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -86,7 +92,8 @@ fun EventList(
                 key(event.id) {
                     SwipeableEventItem(
                         event = event,
-                        onDelete = { onDeleteEvent(event) }
+                        onDelete = { onDeleteEvent(event) },
+                        onComplete = { onCompleteEvent(event) }
                     )
                 }
 
@@ -102,7 +109,8 @@ fun EventList(
 @Composable
 fun SwipeableEventItem(
     event: CalendarEvent,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onComplete: () -> Unit
 ) {
     var isDeleted by remember { mutableStateOf(false) }
 
@@ -123,6 +131,9 @@ fun SwipeableEventItem(
                 if (value == DismissValue.DismissedToStart) {
                     isDeleted = true
                     true
+                } else if (value == DismissValue.DismissedToEnd) {
+                    onComplete()
+                    false
                 } else {
                     false
                 }
@@ -131,11 +142,23 @@ fun SwipeableEventItem(
 
         SwipeToDismiss(
             state = dismissState,
-            directions = setOf(DismissDirection.EndToStart), // Swipe left only!
+            directions = setOf(DismissDirection.EndToStart, DismissDirection.StartToEnd), // Swipe left to delete, right to complete!
             background = {
-                val color = when (dismissState.dismissDirection) {
+                val direction = dismissState.dismissDirection
+                val color = when (direction) {
                     DismissDirection.EndToStart -> Color(0xFFE57373) // Premium warm red
+                    DismissDirection.StartToEnd -> Color(0xFF81C784) // Premium soft green
                     else -> Color.Transparent
+                }
+                val alignment = when (direction) {
+                    DismissDirection.EndToStart -> Alignment.CenterEnd
+                    DismissDirection.StartToEnd -> Alignment.CenterStart
+                    else -> Alignment.Center
+                }
+                val icon = when (direction) {
+                    DismissDirection.EndToStart -> Icons.Outlined.DeleteOutline
+                    DismissDirection.StartToEnd -> Icons.Default.Check
+                    else -> null
                 }
                 Box(
                     modifier = Modifier
@@ -143,19 +166,23 @@ fun SwipeableEventItem(
                         .clip(RoundedCornerShape(24.dp))
                         .background(color)
                         .padding(horizontal = 24.dp),
-                    contentAlignment = Alignment.CenterEnd
+                    contentAlignment = alignment
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = "Delete",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    if (icon != null) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             },
             dismissContent = {
                 EventCard(
-                    event = event
+                    event = event,
+                    onDelete = onDelete,
+                    onComplete = onComplete
                 )
             }
         )
@@ -164,7 +191,9 @@ fun SwipeableEventItem(
 
 @Composable
 fun EventCard(
-    event: CalendarEvent
+    event: CalendarEvent,
+    onDelete: () -> Unit,
+    onComplete: () -> Unit
 ) {
     var showDetailsDialog by remember { mutableStateOf(false) }
     var showPreviewDialog by remember { mutableStateOf(false) }
@@ -176,15 +205,27 @@ fun EventCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(LightGrayBg)
+            .background(if (event.isCompleted) LightGrayBg.copy(alpha = 0.6f) else LightGrayBg)
             .clickable { showDetailsDialog = true } // Click card to trigger premium details dialog!
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = "Delete",
+                    tint = Color(0xFFE57373),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = event.time,
@@ -195,10 +236,11 @@ fun EventCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = event.title,
-                    color = DarkBlue,
+                    color = if (event.isCompleted) TextGray else DarkBlue,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
+                    letterSpacing = 0.5.sp,
+                    textDecoration = if (event.isCompleted) TextDecoration.LineThrough else TextDecoration.None
                 )
             }
             
@@ -231,6 +273,18 @@ fun EventCard(
                         }
                     }
                 }
+            }
+
+            IconButton(
+                onClick = onComplete,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = if (event.isCompleted) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
+                    contentDescription = "Complete",
+                    tint = if (event.isCompleted) Color(0xFF4CAF50) else TextGray,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }

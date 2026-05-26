@@ -11,5 +11,6 @@ data class CalendarEvent(
     val time: String,
     val link: String? = null,
     val fileNames: List<String> = emptyList(),
-    val showDelete: Boolean = true
+    val showDelete: Boolean = true,
+    val isCompleted: Boolean = false
 )

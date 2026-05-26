@@ -15,19 +15,38 @@ import com.example.calendarapp.ui.theme.DarkBlue
 import com.example.calendarapp.ui.theme.TextGray
 import com.example.calendarapp.ui.theme.White
 
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
+
 @Composable
 fun TodaySection(
     selectedDay: Int,
+    selectedMonth: String,
+    selectedYear: Int,
     eventCount: Int
 ) {
-    val weekday = when ((6 + (selectedDay - 1)) % 7) {
-        0 -> "Sunday"
-        1 -> "Monday"
-        2 -> "Tuesday"
-        3 -> "Wednesday"
-        4 -> "Thursday"
-        5 -> "Friday"
-        else -> "Saturday"
+    val monthIndex = when (selectedMonth.lowercase(Locale.US)) {
+        "january" -> 1
+        "february" -> 2
+        "march" -> 3
+        "april" -> 4
+        "may" -> 5
+        "june" -> 6
+        "july" -> 7
+        "august" -> 8
+        "september" -> 9
+        "october" -> 10
+        "november" -> 11
+        "december" -> 12
+        else -> 1
+    }
+
+    val weekday = try {
+        val date = LocalDate.of(selectedYear, monthIndex, selectedDay)
+        date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
+    } catch (e: Exception) {
+        "Unknown"
     }
 
     val eventText = when (eventCount) {

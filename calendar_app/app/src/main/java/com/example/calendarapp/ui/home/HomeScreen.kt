@@ -36,6 +36,7 @@ fun HomeScreen(
     onDaySelected: (Int) -> Unit,
     events: List<CalendarEvent>,
     onDeleteEvent: (CalendarEvent) -> Unit,
+    onCompleteEvent: (CalendarEvent) -> Unit,
     activeTab: String,
     onTabSelected: (String) -> Unit,
     searchQuery: String,
@@ -116,7 +117,6 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
         ) {
             // Top Section with Calendar (White background, shadow at the bottom)
             Surface(
@@ -143,6 +143,8 @@ fun HomeScreen(
                         events = events,
                         selectedMonth = selectedMonth,
                         selectedYear = selectedYear,
+                        onMonthSelected = onMonthSelected,
+                        onYearSelected = onYearSelected,
                         onPreviousMonth = { onPreviousMonth() },
                         onNextMonth = { onNextMonth() }
                     )
@@ -150,18 +152,27 @@ fun HomeScreen(
                 }
             }
             
-            // Bottom Section with Events
-            TodaySection(
-                selectedDay = selectedDay,
-                eventCount = filteredEvents.size
-            )
-            
-            EventList(
-                events = filteredEvents,
-                onDeleteEvent = onDeleteEvent
-            )
-            
-            Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
+            // Bottom Section with Events (scrollable, locked to proportion!)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                TodaySection(
+                    selectedDay = selectedDay,
+                    selectedMonth = selectedMonth,
+                    selectedYear = selectedYear,
+                    eventCount = filteredEvents.size
+                )
+                
+                EventList(
+                    events = filteredEvents,
+                    onDeleteEvent = onDeleteEvent,
+                    onCompleteEvent = onCompleteEvent
+                )
+                
+                Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
+            }
         }
     }
 

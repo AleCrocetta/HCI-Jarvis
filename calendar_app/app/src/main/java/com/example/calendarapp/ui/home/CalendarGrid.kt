@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,9 +24,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import com.example.calendarapp.model.CalendarEvent
 import com.example.calendarapp.ui.theme.*
+import java.time.LocalDate
+import kotlinx.coroutines.launch
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
 
 private fun monthNameToIndex(monthName: String): Int {
     return when (monthName.lowercase(java.util.Locale.US)) {
@@ -45,6 +56,7 @@ private fun monthNameToIndex(monthName: String): Int {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CalendarGrid(
     selectedDay: Int,
@@ -52,63 +64,55 @@ fun CalendarGrid(
     events: List<CalendarEvent>,
     selectedMonth: String,
     selectedYear: Int,
+    onMonthSelected: (String) -> Unit,
+    onYearSelected: (Int) -> Unit,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit
 ) {
     val daysOfWeek = listOf("Sa", "Su", "Mo", "Tu", "We", "Th", "Fr")
-    
-    val cal = java.util.Calendar.getInstance().apply {
-        set(java.util.Calendar.YEAR, selectedYear)
-        set(java.util.Calendar.MONTH, monthNameToIndex(selectedMonth))
-        set(java.util.Calendar.DAY_OF_MONTH, 1)
-    }
-    val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+    val today = remember { LocalDate.now() }
+    val monthsList = listOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    )
 
-    // Sunday = 1, Monday = 2, Tuesday = 3, Wednesday = 4, Thursday = 5, Friday = 6, Saturday = 7.
-    // Starting on Saturday:
-    // Saturday (7) -> 0
-    // Sunday (1) -> 1
-    // ...
-    // Friday (6) -> 6
-    // Formula: dayOfWeek % 7
-    val dayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK)
-    val startDayOffset = dayOfWeek % 7
+    // Calculate current absolute month index for epoch
+    val currentMonthEpoch = selectedYear * 12 + monthNameToIndex(selectedMonth)
+    
+    val pagerState = rememberPagerState(
+        initialPage = currentMonthEpoch,
+        pageCount = { 3000 * 12 } // Range of 3000 years!
+    )
+    
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Sync pagerState -> parentState (when user swipes)
+    LaunchedEffect(pagerState.currentPage) {
+        val targetEpoch = pagerState.currentPage
+        val targetYear = targetEpoch / 12
+        val targetMonthIndex = targetEpoch % 12
+        val targetMonthName = monthsList[targetMonthIndex]
+        
+        if (targetYear != selectedYear || targetMonthName != selectedMonth) {
+            onMonthSelected(targetMonthName)
+            onYearSelected(targetYear)
+        }
+    }
+    
+    // Sync parentState -> pagerState (when top bar selects a month)
+    LaunchedEffect(selectedMonth, selectedYear) {
+        val targetEpoch = selectedYear * 12 + monthNameToIndex(selectedMonth)
+        if (pagerState.currentPage != targetEpoch) {
+            pagerState.scrollToPage(targetEpoch)
+        }
+    }
 
-    val prevCal = (cal.clone() as java.util.Calendar).apply {
-        add(java.util.Calendar.MONTH, -1)
-    }
-    val daysInPrevMonth = prevCal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
-    
-    val previousMonthDays = if (startDayOffset > 0) {
-        ((daysInPrevMonth - startDayOffset + 1)..daysInPrevMonth).toList()
-    } else {
-        emptyList()
-    }
-    
-    var offsetX by remember { mutableStateOf(0f) }
-    
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .pointerInput(selectedMonth, selectedYear) {
-                detectHorizontalDragGestures(
-                    onDragStart = { offsetX = 0f },
-                    onDragEnd = {
-                        if (offsetX > 150f) {
-                            onPreviousMonth()
-                        } else if (offsetX < -150f) {
-                            onNextMonth()
-                        }
-                    },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        offsetX += dragAmount
-                    }
-                )
-            }
     ) {
-        // Days of week header
+        // Days of week header (Static at the top!)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -127,17 +131,88 @@ fun CalendarGrid(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Calendar Grid
-        val totalDaysToShow = daysInMonth + startDayOffset
-        val numRows = if (totalDaysToShow > 35) 6 else 5
-        var currentDay = 1
-        var nextMonthDay = 1
-        
+        // Vertical Snapping Pager for Days Grid ( Instagram/TikTok Reel Paging feel!)
+        VerticalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(320.dp) // Height increased to fully fit all 6 rows!
+        ) { page ->
+            val pageYear = page / 12
+            val pageMonthName = monthsList[page % 12]
+            
+            CalendarMonthGrid(
+                selectedDay = selectedDay,
+                onDaySelected = onDaySelected,
+                events = events,
+                selectedMonth = pageMonthName,
+                selectedYear = pageYear,
+                today = today,
+                monthsList = monthsList,
+                onPreviousMonth = {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
+                },
+                onNextMonth = {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun CalendarMonthGrid(
+    selectedDay: Int,
+    onDaySelected: (Int) -> Unit,
+    events: List<CalendarEvent>,
+    selectedMonth: String,
+    selectedYear: Int,
+    today: LocalDate,
+    monthsList: List<String>,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit
+) {
+    val cal = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.YEAR, selectedYear)
+        set(java.util.Calendar.MONTH, monthNameToIndex(selectedMonth))
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
+    }
+    val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+
+    val dayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK)
+    val startDayOffset = dayOfWeek % 7
+
+    val prevCal = (cal.clone() as java.util.Calendar).apply {
+        add(java.util.Calendar.MONTH, -1)
+    }
+    val daysInPrevMonth = prevCal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+    
+    val previousMonthDays = if (startDayOffset > 0) {
+        ((daysInPrevMonth - startDayOffset + 1)..daysInPrevMonth).toList()
+    } else {
+        emptyList()
+    }
+
+    val currentMonthIndex = monthsList.indexOf(selectedMonth)
+    val nextMonthName = monthsList[(currentMonthIndex + 1) % 12]
+    val nextMonthYear = if (selectedMonth == "December") selectedYear + 1 else selectedYear
+
+    var currentDay = 1
+    var nextMonthDay = 1
+    
+    // Always render exactly 6 rows to lock the grid height perfectly!
+    val numRows = 6 
+
+    Column(modifier = Modifier.fillMaxWidth()) {
         for (row in 0 until numRows) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = 2.dp), // Margins tightened for optimal 6-row balance
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 for (col in 0..6) {
@@ -147,30 +222,69 @@ fun CalendarGrid(
                         contentAlignment = Alignment.Center
                     ) {
                         if (cellIndex < startDayOffset) {
-                            // Previous month days
                             val day = previousMonthDays.getOrNull(cellIndex) ?: 30
-                            CalendarCell(day = day.toString(), isPast = true)
+                            CalendarCell(
+                                day = day.toString(),
+                                isPast = true,
+                                bgColor = Color.Transparent,
+                                textColor = Color(0xFFBDBDBD),
+                                onClick = {
+                                    onPreviousMonth()
+                                    onDaySelected(day)
+                                }
+                            )
                         } else if (currentDay <= daysInMonth) {
-                            // Current month days
                             val dayNum = currentDay
                             val isSelected = selectedDay == dayNum
                             
-                            // Check events for indicators dynamically matching BOTH day, selectedMonth AND selectedYear!
                             val dayEvents = events.filter { it.day == dayNum && it.month.equals(selectedMonth, ignoreCase = true) && it.year == selectedYear }
-                            val hasFlight = dayEvents.any { it.title.contains("FLIGHT", ignoreCase = true) || it.title.contains("TRIP", ignoreCase = true) || it.title.contains("PLANE", ignoreCase = true) }
-                            val hasBorder = dayEvents.isNotEmpty() && !hasFlight
+                            
+                            val cellDate = try {
+                                LocalDate.of(selectedYear, monthNameToIndex(selectedMonth) + 1, dayNum)
+                            } catch (e: Exception) {
+                                null
+                            }
+                            val isCellPast = cellDate != null && cellDate.isBefore(today)
+                            val isToday = cellDate != null && cellDate.isEqual(today)
+
+                            val cellBgColor = when {
+                                isCellPast -> Color(0xFFE0E0E0)
+                                dayEvents.isEmpty() -> Color.Transparent
+                                isToday && dayEvents.all { it.isCompleted } -> Color(0xFF81C784)
+                                dayEvents.size in 1..2 -> Color(0xFFFFF9C4)
+                                dayEvents.size in 3..5 -> Color(0xFFFFCC80)
+                                else -> Color(0xFFEF5350)
+                            }
+
+                            val cellTextColor = when {
+                                isCellPast -> Color(0xFF757575)
+                                isSelected && cellBgColor == Color.Transparent -> White
+                                cellBgColor == Color(0xFFEF5350) -> White
+                                else -> DarkBlue
+                            }
                             
                             CalendarCell(
                                 day = dayNum.toString(),
                                 isSelected = isSelected,
-                                hasBorder = hasBorder,
-                                hasIcon = hasFlight,
+                                bgColor = cellBgColor,
+                                textColor = cellTextColor,
+                                isPast = isCellPast,
                                 onClick = { onDaySelected(dayNum) }
                             )
                             currentDay++
                         } else {
-                            // Next month days
-                            CalendarCell(day = nextMonthDay.toString(), isPast = true)
+                            val dayNum = nextMonthDay
+                            CalendarCell(
+                                day = dayNum.toString(),
+                                isSelected = false,
+                                bgColor = Color.Transparent,
+                                textColor = Color(0xFFBDBDBD),
+                                isPast = true,
+                                onClick = {
+                                    onNextMonth()
+                                    onDaySelected(dayNum)
+                                }
+                            )
                             nextMonthDay++
                         }
                     }
@@ -184,26 +298,23 @@ fun CalendarGrid(
 fun CalendarCell(
     day: String,
     isSelected: Boolean = false,
+    bgColor: Color = Color.Transparent,
+    textColor: Color = DarkBlue,
     isPast: Boolean = false,
-    hasBorder: Boolean = false,
-    hasIcon: Boolean = false,
     onClick: () -> Unit = {}
 ) {
-    val bgColor = when {
-        isSelected -> CircleBgSelected
-        isPast -> Color.Transparent
-        hasBorder -> Color.White
-        else -> CircleBgNormal
+    val actualBgColor = when {
+        isSelected && bgColor == Color.Transparent -> CircleBgSelected
+        else -> bgColor
     }
     
-    val textColor = when {
-        isSelected -> White
-        isPast -> Color(0xFFD0D0D0) // Light gray for past days
-        else -> DarkBlue
+    val actualTextColor = when {
+        isSelected && bgColor == Color.Transparent -> White
+        else -> textColor
     }
     
-    val borderModifier = if (hasBorder) {
-        Modifier.border(1.dp, GrayBorder, CircleShape)
+    val borderModifier = if (isSelected && bgColor != Color.Transparent) {
+        Modifier.border(2.dp, DarkBlue, CircleShape)
     } else {
         Modifier
     }
@@ -216,28 +327,16 @@ fun CalendarCell(
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .background(bgColor)
+                .background(actualBgColor)
                 .then(borderModifier)
-                .clickable(enabled = !isPast) { onClick() },
+                .clickable { onClick() },
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = day,
-                color = textColor,
+                color = actualTextColor,
                 fontWeight = if (isSelected || !isPast) FontWeight.Medium else FontWeight.Normal,
                 fontSize = 14.sp
-            )
-        }
-        
-        if (hasIcon) {
-            Icon(
-                imageVector = Icons.Default.AirplanemodeActive,
-                contentDescription = null,
-                tint = TextGray,
-                modifier = Modifier
-                    .size(16.dp)
-                    .align(Alignment.BottomEnd)
-                    .offset(x = (-4).dp, y = 4.dp)
             )
         }
     }

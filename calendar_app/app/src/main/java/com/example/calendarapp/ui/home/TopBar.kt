@@ -103,9 +103,10 @@ fun TopBar(
                 }
                 
                 IconButton(onClick = onBrainClick) {
-                    Image(
-                        painter = painterResource(id = com.example.calendarapp.R.drawable.ic_brain),
+                    Icon(
+                        imageVector = Icons.Outlined.Psychology,
                         contentDescription = "Memory Preferences",
+                        tint = TextGray,
                         modifier = Modifier.size(24.dp)
                     )
                 }

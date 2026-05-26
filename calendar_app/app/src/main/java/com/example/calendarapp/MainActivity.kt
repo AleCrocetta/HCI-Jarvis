@@ -68,6 +68,12 @@ class MainActivity : ComponentActivity() {
                                 },
                                 events = eventsList.toList(),
                                 onDeleteEvent = { event -> eventsList.remove(event) },
+                                onCompleteEvent = { event ->
+                                    val index = eventsList.indexOfFirst { it.id == event.id }
+                                    if (index != -1) {
+                                        eventsList[index] = eventsList[index].copy(isCompleted = !eventsList[index].isCompleted)
+                                    }
+                                },
                                 activeTab = activeTab,
                                 onTabSelected = { tab -> activeTab = tab },
                                 searchQuery = searchQuery,
