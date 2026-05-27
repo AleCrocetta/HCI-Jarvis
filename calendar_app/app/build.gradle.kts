@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,6 +21,14 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        val envFile = project.rootProject.file(".env")
+        val envProperties = Properties()
+        if (envFile.exists()) {
+            envProperties.load(FileInputStream(envFile))
+        }
+        val geminiApiKey = envProperties.getProperty("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     buildTypes {
@@ -38,6 +49,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -62,6 +74,9 @@ dependencies {
     
     // Icons
     implementation("androidx.compose.material:material-icons-extended")
+    
+    // Gemini AI
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -91,7 +92,9 @@ fun JarvisOrb(modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JarvisBottomBar(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSendClick: (String) -> Unit = {},
+    onMicClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var textState by remember { mutableStateOf("") }
@@ -147,7 +150,7 @@ fun JarvisBottomBar(
             
             Spacer(modifier = Modifier.width(12.dp))
             
-            // Microphone Button
+            // Microphone / Send Button
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -161,13 +164,18 @@ fun JarvisBottomBar(
                         )
                     )
                     .clickable {
-                        Toast.makeText(context, "Listening to voice input...", Toast.LENGTH_SHORT).show()
+                        if (textState.isNotBlank()) {
+                            onSendClick(textState)
+                            textState = ""
+                        } else {
+                            onMicClick()
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = "Voice Input",
+                    imageVector = if (textState.isNotBlank()) Icons.Default.Send else Icons.Default.Mic,
+                    contentDescription = if (textState.isNotBlank()) "Send Text" else "Voice Input",
                     tint = White,
                     modifier = Modifier.size(22.dp)
                 )

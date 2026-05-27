@@ -10,6 +10,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -21,6 +25,24 @@ import java.util.Calendar
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+
+    private val speechRecognizerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            val results = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = results?.get(0)
+            if (!spokenText.isNullOrBlank()) {
+                // We will handle this in the viewmodel via a callback stored in state or passing to VM directly.
+                // For simplicity, let's just create a shared flow or static method.
+                // To keep it simple in Compose, we can use a callback.
+                onSpeechRecognized?.invoke(spokenText)
+            }
+        }
+    }
+
+    private var onSpeechRecognized: ((String) -> Unit)? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -57,6 +79,34 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    val jarvisViewModel: com.example.calendarapp.ui.JarvisViewModel = viewModel()
+                    val chatHistory by jarvisViewModel.chatHistory.collectAsState(initial = emptyList())
+
+                    onSpeechRecognized = { text ->
+                        jarvisViewModel.handleUserPrompt(
+                            prompt = text,
+                            currentEvents = eventsList.toList(),
+                            onAddEvent = { event -> 
+                                eventsList.add(event)
+                                selectedDay = event.day
+                                selectedMonth = event.month
+                                selectedYear = event.year
+                                viewAllEvents = false
+                            },
+                            onRemoveEvent = { id -> eventsList.removeAll { it.id == id } },
+                            onModifyEvent = { modifiedEvent ->
+                                val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
+                                if (index != -1) {
+                                    eventsList[index] = modifiedEvent
+                                    selectedDay = modifiedEvent.day
+                                    selectedMonth = modifiedEvent.month
+                                    selectedYear = modifiedEvent.year
+                                    viewAllEvents = false
+                                }
+                            }
+                        )
+                    }
+
                     NavHost(navController = navController, startDestination = "home") {
                         composable("home") {
                             HomeScreen(
@@ -86,7 +136,40 @@ class MainActivity : ComponentActivity() {
                                 onYearSelected = { selectedYear = it },
                                 onAddEventClick = {
                                     navController.navigate("add_event")
-                                }
+                                },
+                                onSendClick = { text ->
+                                    jarvisViewModel.handleUserPrompt(
+                                        prompt = text,
+                                        currentEvents = eventsList.toList(),
+                                        onAddEvent = { event -> 
+                                            eventsList.add(event)
+                                            selectedDay = event.day
+                                            selectedMonth = event.month
+                                            selectedYear = event.year
+                                            viewAllEvents = false
+                                        },
+                                        onRemoveEvent = { id -> eventsList.removeAll { it.id == id } },
+                                        onModifyEvent = { modifiedEvent ->
+                                            val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
+                                            if (index != -1) {
+                                                eventsList[index] = modifiedEvent
+                                                selectedDay = modifiedEvent.day
+                                                selectedMonth = modifiedEvent.month
+                                                selectedYear = modifiedEvent.year
+                                                viewAllEvents = false
+                                            }
+                                        }
+                                    )
+                                },
+                                onMicClick = {
+                                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Jarvis...")
+                                    }
+                                    speechRecognizerLauncher.launch(intent)
+                                },
+                                chatHistory = chatHistory
                             )
                         }
                         composable("add_event") {

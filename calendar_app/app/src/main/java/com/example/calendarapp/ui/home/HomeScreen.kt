@@ -21,15 +21,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import com.example.calendarapp.model.CalendarEvent
+import com.example.calendarapp.ui.ChatMessage
 import com.example.calendarapp.ui.theme.DarkBlue
 import com.example.calendarapp.ui.theme.LightBlueBg
 import com.example.calendarapp.ui.theme.LightGrayBg
 import com.example.calendarapp.ui.theme.TextGray
 import com.example.calendarapp.ui.theme.White
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     selectedDay: Int,
@@ -47,7 +50,10 @@ fun HomeScreen(
     onMonthSelected: (String) -> Unit,
     selectedYear: Int,
     onYearSelected: (Int) -> Unit,
-    onAddEventClick: () -> Unit
+    onAddEventClick: () -> Unit,
+    onSendClick: (String) -> Unit = {},
+    onMicClick: () -> Unit = {},
+    chatHistory: List<ChatMessage> = emptyList()
 ) {
     // Filter events dynamically based on day, month, year and search query
     val filteredEvents = events.filter { event ->
@@ -96,19 +102,57 @@ fun HomeScreen(
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            JarvisBottomBar()
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddEventClick,
-                shape = CircleShape,
-                containerColor = DarkBlue,
-                contentColor = White,
-                modifier = Modifier.padding(bottom = 16.dp, end = 8.dp)
+    val bottomSheetScaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            skipHiddenState = true,
+            initialValue = SheetValue.PartiallyExpanded
+        )
+    )
+
+    BottomSheetScaffold(
+        scaffoldState = bottomSheetScaffoldState,
+        sheetPeekHeight = 80.dp, // Height of the bottom bar
+        sheetContainerColor = White,
+        sheetContent = {
+            // Drag handle is built-in by default, but we will place our JarvisBottomBar right below it
+            Column(
+                modifier = Modifier.fillMaxHeight(0.8f) // Occupy up to 80% when expanded
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Event")
+                JarvisBottomBar(
+                    onSendClick = onSendClick,
+                    onMicClick = onMicClick
+                )
+                
+                Divider(color = LightGrayBg)
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(16.dp),
+                    reverseLayout = false
+                ) {
+                    items(chatHistory) { msg ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(if (msg.isUser) DarkBlue else LightGrayBg)
+                                    .padding(12.dp)
+                            ) {
+                                Text(
+                                    text = msg.text,
+                                    color = if (msg.isUser) White else DarkBlue,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         containerColor = White
@@ -172,6 +216,23 @@ fun HomeScreen(
                 )
                 
                 Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
+            }
+        }
+        
+        // Custom FAB placement
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            FloatingActionButton(
+                onClick = onAddEventClick,
+                shape = CircleShape,
+                containerColor = DarkBlue,
+                contentColor = White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 96.dp, end = 16.dp) // Above bottom sheet
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Event")
             }
         }
     }
