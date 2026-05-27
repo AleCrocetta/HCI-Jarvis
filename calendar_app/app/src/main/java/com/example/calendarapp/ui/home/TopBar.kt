@@ -7,7 +7,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.CalendarToday
-import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -28,8 +27,7 @@ fun TopBar(
     selectedYear: Int,
     onMonthClick: () -> Unit,
     searchQuery: String,
-    onSearchQueryChanged: (String) -> Unit,
-    onBrainClick: () -> Unit
+    onSearchQueryChanged: (String) -> Unit
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
 
@@ -99,15 +97,6 @@ fun TopBar(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
                         tint = TextGray
-                    )
-                }
-                
-                IconButton(onClick = onBrainClick) {
-                    Icon(
-                        imageVector = Icons.Outlined.Psychology,
-                        contentDescription = "Memory Preferences",
-                        tint = TextGray,
-                        modifier = Modifier.size(24.dp)
                     )
                 }
             }

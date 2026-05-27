@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,7 +95,8 @@ fun JarvisOrb(modifier: Modifier = Modifier) {
 fun JarvisBottomBar(
     modifier: Modifier = Modifier,
     onSendClick: (String) -> Unit = {},
-    onMicClick: () -> Unit = {}
+    onMicClick: () -> Unit = {},
+    onBrainClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var textState by remember { mutableStateOf("") }
@@ -112,13 +114,21 @@ fun JarvisBottomBar(
                 .navigationBarsPadding(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
-                painter = painterResource(id = com.example.calendarapp.R.drawable.jarvis_bottom_icon),
-                contentDescription = "Jarvis Logo",
+            // Memory / Preferences Button replacing the Jarvis Logo
+            IconButton(
+                onClick = onBrainClick,
                 modifier = Modifier
-                    .size(70.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-            )
+                    .background(Color(0xFF2979FF).copy(alpha = 0.1f))
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Psychology,
+                    contentDescription = "Memory Preferences",
+                    tint = Color(0xFF2979FF),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
             
             Spacer(modifier = Modifier.width(12.dp))
             

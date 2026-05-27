@@ -102,57 +102,23 @@ fun HomeScreen(
         }
     }
 
-    val bottomSheetScaffoldState = rememberBottomSheetScaffoldState(
-        bottomSheetState = rememberStandardBottomSheetState(
-            skipHiddenState = true,
-            initialValue = SheetValue.PartiallyExpanded
-        )
-    )
-
-    BottomSheetScaffold(
-        scaffoldState = bottomSheetScaffoldState,
-        sheetPeekHeight = 80.dp, // Height of the bottom bar
-        sheetContainerColor = White,
-        sheetContent = {
-            // Drag handle is built-in by default, but we will place our JarvisBottomBar right below it
-            Column(
-                modifier = Modifier.fillMaxHeight(0.8f) // Occupy up to 80% when expanded
+    Scaffold(
+        bottomBar = {
+            JarvisBottomBar(
+                onSendClick = onSendClick,
+                onMicClick = onMicClick,
+                onBrainClick = { showMemoryDialog = true }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onAddEventClick,
+                shape = CircleShape,
+                containerColor = DarkBlue,
+                contentColor = White,
+                modifier = Modifier.padding(bottom = 16.dp, end = 8.dp)
             ) {
-                JarvisBottomBar(
-                    onSendClick = onSendClick,
-                    onMicClick = onMicClick
-                )
-                
-                Divider(color = LightGrayBg)
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(16.dp),
-                    reverseLayout = false
-                ) {
-                    items(chatHistory) { msg ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(vertical = 4.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(if (msg.isUser) DarkBlue else LightGrayBg)
-                                    .padding(12.dp)
-                            ) {
-                                Text(
-                                    text = msg.text,
-                                    color = if (msg.isUser) White else DarkBlue,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
-                }
+                Icon(Icons.Default.Add, contentDescription = "Add Event")
             }
         },
         containerColor = White
@@ -178,8 +144,7 @@ fun HomeScreen(
                         selectedYear = selectedYear,
                         onMonthClick = { showMonthDialog = true },
                         searchQuery = searchQuery,
-                        onSearchQueryChanged = onSearchQueryChanged,
-                        onBrainClick = { showMemoryDialog = true }
+                        onSearchQueryChanged = onSearchQueryChanged
                     )
                     CalendarGrid(
                         selectedDay = selectedDay,
@@ -216,23 +181,6 @@ fun HomeScreen(
                 )
                 
                 Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
-            }
-        }
-        
-        // Custom FAB placement
-        Box(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            FloatingActionButton(
-                onClick = onAddEventClick,
-                shape = CircleShape,
-                containerColor = DarkBlue,
-                contentColor = White,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = 96.dp, end = 16.dp) // Above bottom sheet
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Event")
             }
         }
     }
