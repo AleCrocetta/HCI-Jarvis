@@ -31,6 +31,14 @@ import com.example.calendarapp.ui.theme.LightBlueBg
 import com.example.calendarapp.ui.theme.LightGrayBg
 import com.example.calendarapp.ui.theme.TextGray
 import com.example.calendarapp.ui.theme.White
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +47,7 @@ fun HomeScreen(
     onDaySelected: (Int) -> Unit,
     events: List<CalendarEvent>,
     onDeleteEvent: (CalendarEvent) -> Unit,
+    onRestoreEvent: (CalendarEvent) -> Unit,
     onCompleteEvent: (CalendarEvent) -> Unit,
     activeTab: String,
     onTabSelected: (String) -> Unit,
@@ -62,6 +71,32 @@ fun HomeScreen(
         val dayMatches = viewAllEvents || event.day == selectedDay
         val searchMatches = searchQuery.isBlank() || event.title.contains(searchQuery, ignoreCase = true)
         yearMatches && monthMatches && dayMatches && searchMatches
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+    val recentlyDeletedEvents = remember { mutableStateListOf<CalendarEvent>() }
+    var showUndoSnackbar by remember { mutableStateOf(false) }
+    var undoTimerJob by remember { mutableStateOf<Job?>(null) }
+
+    val handleEventDeletion: (CalendarEvent) -> Unit = { event ->
+        recentlyDeletedEvents.add(event)
+        onDeleteEvent(event)
+        showUndoSnackbar = true
+        undoTimerJob?.cancel()
+        undoTimerJob = coroutineScope.launch {
+            delay(4000) // 4 seconds delay
+            recentlyDeletedEvents.clear()
+            showUndoSnackbar = false
+        }
+    }
+
+    val handleUndoDelete: () -> Unit = {
+        recentlyDeletedEvents.reversed().forEach { restoredEvent ->
+            onRestoreEvent(restoredEvent)
+        }
+        recentlyDeletedEvents.clear()
+        showUndoSnackbar = false
+        undoTimerJob?.cancel()
     }
 
     var showMemoryDialog by remember { mutableStateOf(false) }
@@ -123,64 +158,131 @@ fun HomeScreen(
         },
         containerColor = White
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Top Section with Calendar (White background, shadow at the bottom)
-            Surface(
-                color = White,
-                shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
-                modifier = Modifier.shadow(
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
-                    spotColor = DarkBlue.copy(alpha = 0.05f)
-                )
-            ) {
-                Column {
-                    TopBar(
-                        selectedMonth = selectedMonth,
-                        selectedYear = selectedYear,
-                        onMonthClick = { showMonthDialog = true },
-                        searchQuery = searchQuery,
-                        onSearchQueryChanged = onSearchQueryChanged
-                    )
-                    CalendarGrid(
-                        selectedDay = selectedDay,
-                        onDaySelected = onDaySelected,
-                        events = events,
-                        selectedMonth = selectedMonth,
-                        selectedYear = selectedYear,
-                        onMonthSelected = onMonthSelected,
-                        onYearSelected = onYearSelected,
-                        onPreviousMonth = { onPreviousMonth() },
-                        onNextMonth = { onNextMonth() }
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-            }
-            
-            // Bottom Section with Events (scrollable, locked to proportion!)
             Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
+                    .fillMaxSize()
             ) {
-                TodaySection(
-                    selectedDay = selectedDay,
-                    selectedMonth = selectedMonth,
-                    selectedYear = selectedYear,
-                    eventCount = filteredEvents.size
-                )
+                // Top Section with Calendar (White background, shadow at the bottom)
+                Surface(
+                    color = White,
+                    shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
+                    modifier = Modifier.shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
+                        spotColor = DarkBlue.copy(alpha = 0.05f)
+                    )
+                ) {
+                    Column {
+                        TopBar(
+                            selectedMonth = selectedMonth,
+                            selectedYear = selectedYear,
+                            onMonthClick = { showMonthDialog = true },
+                            searchQuery = searchQuery,
+                            onSearchQueryChanged = onSearchQueryChanged
+                        )
+                        CalendarGrid(
+                            selectedDay = selectedDay,
+                            onDaySelected = onDaySelected,
+                            events = events,
+                            selectedMonth = selectedMonth,
+                            selectedYear = selectedYear,
+                            onMonthSelected = onMonthSelected,
+                            onYearSelected = onYearSelected,
+                            onPreviousMonth = { onPreviousMonth() },
+                            onNextMonth = { onNextMonth() }
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
                 
-                EventList(
-                    events = filteredEvents,
-                    onDeleteEvent = onDeleteEvent,
-                    onCompleteEvent = onCompleteEvent
-                )
-                
-                Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
+                // Bottom Section with Events (scrollable, locked to proportion!)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    TodaySection(
+                        selectedDay = selectedDay,
+                        selectedMonth = selectedMonth,
+                        selectedYear = selectedYear,
+                        eventCount = filteredEvents.size
+                    )
+                    
+                    EventList(
+                        events = filteredEvents,
+                        onDeleteEvent = handleEventDeletion,
+                        onCompleteEvent = onCompleteEvent
+                    )
+                    
+                    Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
+                }
+            }
+
+            // Beautiful Undo Banner!
+            AnimatedVisibility(
+                visible = showUndoSnackbar,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)
+                ),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 250)
+                ),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp, start = 16.dp, end = 16.dp)
+            ) {
+                Surface(
+                    color = DarkBlue.copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val count = recentlyDeletedEvents.size
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "🗑️",
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = if (count == 1) "Task deleted" else "$count tasks deleted",
+                                color = White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        
+                        TextButton(
+                            onClick = handleUndoDelete,
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784)) // Sleek premium green for undo
+                        ) {
+                            Text(
+                                text = "UNDO",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }

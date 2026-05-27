@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    val deletedEventIndices = remember { mutableStateMapOf<String, Int>() }
+
                     val jarvisViewModel: com.example.calendarapp.ui.JarvisViewModel = viewModel()
                     val chatHistory by jarvisViewModel.chatHistory.collectAsState(initial = emptyList())
 
@@ -117,7 +119,22 @@ class MainActivity : ComponentActivity() {
                                     viewAllEvents = false 
                                 },
                                 events = eventsList.toList(),
-                                onDeleteEvent = { event -> eventsList.remove(event) },
+                                onDeleteEvent = { event ->
+                                    val index = eventsList.indexOfFirst { it.id == event.id }
+                                    if (index != -1) {
+                                        deletedEventIndices[event.id] = index
+                                        eventsList.removeAt(index)
+                                    }
+                                },
+                                onRestoreEvent = { event ->
+                                    val originalIndex = deletedEventIndices[event.id]
+                                    if (originalIndex != null && originalIndex <= eventsList.size) {
+                                        eventsList.add(originalIndex, event)
+                                    } else {
+                                        eventsList.add(event)
+                                    }
+                                    deletedEventIndices.remove(event.id)
+                                },
                                 onCompleteEvent = { event ->
                                     val index = eventsList.indexOfFirst { it.id == event.id }
                                     if (index != -1) {
