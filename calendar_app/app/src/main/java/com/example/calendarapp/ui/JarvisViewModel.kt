@@ -69,9 +69,12 @@ class JarvisViewModel : ViewModel() {
         onRemoveEvent: (String) -> Unit,
         onModifyEvent: (CalendarEvent) -> Unit
     ) {
+        // Grab history before adding current message to avoid sending it twice
+        val previousHistory = _chatHistory.value
+        
         // Add user message to UI
         val userMessage = ChatMessage(text = prompt, isUser = true)
-        _chatHistory.value = _chatHistory.value + userMessage
+        _chatHistory.value = previousHistory + userMessage
 
         viewModelScope.launch {
             try {
@@ -81,8 +84,14 @@ class JarvisViewModel : ViewModel() {
                     contextStr += "ID: ${it.id}, Title: ${it.title}, Date: ${it.month} ${it.day}, ${it.year}, Time: ${it.time}\n"
                 }
                 
-                val chat = generativeModel.startChat()
-                val response = chat.sendMessage(prompt + "\n" + contextStr)
+                val historyList = previousHistory.map { msg ->
+                    content(role = if (msg.isUser) "user" else "model") {
+                        text(msg.text)
+                    }
+                }
+                
+                val chat = generativeModel.startChat(history = historyList)
+                val response = chat.sendMessage(prompt + "\n\n" + contextStr)
 
                 var responseText = response.text ?: ""
 
