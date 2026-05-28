@@ -79,7 +79,7 @@ fun EventList(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Tap the '+' button below to add an event for this day",
+                        text = "Ask Jarvis in the chat below to add and arrange your tasks",
                         color = TextGray,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center

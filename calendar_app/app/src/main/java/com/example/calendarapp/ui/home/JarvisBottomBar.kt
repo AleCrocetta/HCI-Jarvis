@@ -31,6 +31,8 @@ import com.example.calendarapp.ui.theme.DarkBlue
 import com.example.calendarapp.ui.theme.LightGrayBg
 import com.example.calendarapp.ui.theme.TextGray
 import com.example.calendarapp.ui.theme.White
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun JarvisOrb(modifier: Modifier = Modifier) {
@@ -100,6 +102,36 @@ fun JarvisBottomBar(
 ) {
     val context = LocalContext.current
     var textState by remember { mutableStateOf("") }
+
+    val fullPlaceholder = "Ask Jarvis to add or arrange tasks..."
+    var animatedPlaceholder by remember { mutableStateOf("") }
+    var showCursor by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        // Cursor blink loop running independently
+        launch {
+            while (true) {
+                showCursor = !showCursor
+                delay(500)
+            }
+        }
+        
+        while (true) {
+            // Typewriter effect forwards
+            for (i in 0..fullPlaceholder.length) {
+                animatedPlaceholder = fullPlaceholder.take(i)
+                delay(75) // delay between characters
+            }
+            delay(4000) // Keep full text visible
+            
+            // Delete effect backwards
+            for (i in fullPlaceholder.length downTo 0) {
+                animatedPlaceholder = fullPlaceholder.take(i)
+                delay(35)
+            }
+            delay(1000)
+        }
+    }
     
     Surface(
         color = White,
@@ -138,7 +170,7 @@ fun JarvisBottomBar(
                 onValueChange = { textState = it },
                 placeholder = { 
                     Text(
-                        "Ask Jarvis...", 
+                        text = animatedPlaceholder + if (showCursor) "|" else "", 
                         color = TextGray, 
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium

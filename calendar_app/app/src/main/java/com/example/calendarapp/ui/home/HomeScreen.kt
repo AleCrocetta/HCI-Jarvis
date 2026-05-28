@@ -39,12 +39,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     selectedDay: Int,
-    onDaySelected: (Int) -> Unit,
+    selectedDayMonth: String,
+    selectedDayYear: Int,
+    onDaySelected: (Int, String, Int) -> Unit,
     events: List<CalendarEvent>,
     onDeleteEvent: (CalendarEvent) -> Unit,
     onRestoreEvent: (CalendarEvent) -> Unit,
@@ -145,17 +149,6 @@ fun HomeScreen(
                 onBrainClick = { showMemoryDialog = true }
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddEventClick,
-                shape = CircleShape,
-                containerColor = DarkBlue,
-                contentColor = White,
-                modifier = Modifier.padding(bottom = 16.dp, end = 8.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Event")
-            }
-        },
         containerColor = White
     ) { paddingValues ->
         Box(
@@ -187,6 +180,8 @@ fun HomeScreen(
                         )
                         CalendarGrid(
                             selectedDay = selectedDay,
+                            selectedDayMonth = selectedDayMonth,
+                            selectedDayYear = selectedDayYear,
                             onDaySelected = onDaySelected,
                             events = events,
                             selectedMonth = selectedMonth,
@@ -219,7 +214,7 @@ fun HomeScreen(
                         onCompleteEvent = onCompleteEvent
                     )
                     
-                    Spacer(modifier = Modifier.height(80.dp)) // Extra space for FAB
+                    Spacer(modifier = Modifier.height(16.dp)) // Padding at bottom of event list
                 }
             }
 
@@ -416,6 +411,7 @@ fun HomeScreen(
     // Month Selector Dialog
     if (showMonthDialog) {
         var tempYear by remember { mutableStateOf(selectedYear) }
+        var yearInput by remember { mutableStateOf(selectedYear.toString()) }
         AlertDialog(
             onDismissRequest = { showMonthDialog = false },
             title = {
@@ -430,18 +426,47 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        IconButton(onClick = { tempYear-- }) {
+                        IconButton(onClick = { 
+                            tempYear--
+                            yearInput = tempYear.toString()
+                        }) {
                             Text("<", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         }
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = tempYear.toString(),
-                            color = DarkBlue,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
+                        OutlinedTextField(
+                            value = yearInput,
+                            onValueChange = { input ->
+                                if (input.length <= 4 && input.all { it.isDigit() }) {
+                                    yearInput = input
+                                    input.toIntOrNull()?.let { parsedYear ->
+                                        tempYear = parsedYear
+                                    }
+                                }
+                            },
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = DarkBlue,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            ),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier
+                                .width(90.dp)
+                                .height(52.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = DarkBlue,
+                                unfocusedBorderColor = TextGray.copy(alpha = 0.4f),
+                                focusedContainerColor = LightGrayBg,
+                                unfocusedContainerColor = LightGrayBg
+                            ),
+                            shape = RoundedCornerShape(12.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
-                        IconButton(onClick = { tempYear++ }) {
+                        IconButton(onClick = { 
+                            tempYear++
+                            yearInput = tempYear.toString()
+                        }) {
                             Text(">", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                         }
                     }

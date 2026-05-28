@@ -60,7 +60,9 @@ private fun monthNameToIndex(monthName: String): Int {
 @Composable
 fun CalendarGrid(
     selectedDay: Int,
-    onDaySelected: (Int) -> Unit,
+    selectedDayMonth: String,
+    selectedDayYear: Int,
+    onDaySelected: (Int, String, Int) -> Unit,
     events: List<CalendarEvent>,
     selectedMonth: String,
     selectedYear: Int,
@@ -143,6 +145,8 @@ fun CalendarGrid(
             
             CalendarMonthGrid(
                 selectedDay = selectedDay,
+                selectedDayMonth = selectedDayMonth,
+                selectedDayYear = selectedDayYear,
                 onDaySelected = onDaySelected,
                 events = events,
                 selectedMonth = pageMonthName,
@@ -167,7 +171,9 @@ fun CalendarGrid(
 @Composable
 fun CalendarMonthGrid(
     selectedDay: Int,
-    onDaySelected: (Int) -> Unit,
+    selectedDayMonth: String,
+    selectedDayYear: Int,
+    onDaySelected: (Int, String, Int) -> Unit,
     events: List<CalendarEvent>,
     selectedMonth: String,
     selectedYear: Int,
@@ -200,6 +206,8 @@ fun CalendarMonthGrid(
     val currentMonthIndex = monthsList.indexOf(selectedMonth)
     val nextMonthName = monthsList[(currentMonthIndex + 1) % 12]
     val nextMonthYear = if (selectedMonth == "December") selectedYear + 1 else selectedYear
+    val prevMonthName = monthsList[if (currentMonthIndex == 0) 11 else currentMonthIndex - 1]
+    val prevMonthYear = if (selectedMonth == "January") selectedYear - 1 else selectedYear
 
     var currentDay = 1
     var nextMonthDay = 1
@@ -230,12 +238,14 @@ fun CalendarMonthGrid(
                                 textColor = Color(0xFFBDBDBD),
                                 onClick = {
                                     onPreviousMonth()
-                                    onDaySelected(day)
+                                    onDaySelected(day, prevMonthName, prevMonthYear)
                                 }
                             )
                         } else if (currentDay <= daysInMonth) {
                             val dayNum = currentDay
-                            val isSelected = selectedDay == dayNum
+                            val isSelected = selectedDay == dayNum && 
+                                             selectedMonth.equals(selectedDayMonth, ignoreCase = true) && 
+                                             selectedYear == selectedDayYear
                             
                             val dayEvents = events.filter { it.day == dayNum && it.month.equals(selectedMonth, ignoreCase = true) && it.year == selectedYear }
                             
@@ -269,7 +279,7 @@ fun CalendarMonthGrid(
                                 bgColor = cellBgColor,
                                 textColor = cellTextColor,
                                 isPast = isCellPast,
-                                onClick = { onDaySelected(dayNum) }
+                                onClick = { onDaySelected(dayNum, selectedMonth, selectedYear) }
                             )
                             currentDay++
                         } else {
@@ -282,7 +292,7 @@ fun CalendarMonthGrid(
                                 isPast = true,
                                 onClick = {
                                     onNextMonth()
-                                    onDaySelected(dayNum)
+                                    onDaySelected(dayNum, nextMonthName, nextMonthYear)
                                 }
                             )
                             nextMonthDay++
