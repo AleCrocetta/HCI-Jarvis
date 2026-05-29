@@ -2,7 +2,10 @@ package com.example.calendarapp.ui.home
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -36,8 +39,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.calendarapp.model.CalendarEvent
@@ -69,6 +70,59 @@ private fun daysInMonth(month: String, year: Int): Int {
     }.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
 }
 
+private fun formatClockTime(totalMinutes: Int): String {
+    val normalized = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60)
+    val hour24 = normalized / 60
+    val minute = normalized % 60
+    val marker = if (hour24 >= 12) "PM" else "AM"
+    val hour12 = when {
+        hour24 == 0 -> 12
+        hour24 > 12 -> hour24 - 12
+        else -> hour24
+    }
+    return "%02d:%02d %s".format(hour12, minute, marker)
+}
+
+private fun parseStartMinutes(time: String): Int {
+    val match = Regex("""(\d{1,2}):(\d{2})\s*(AM|PM)""", RegexOption.IGNORE_CASE).find(time) ?: return 10 * 60
+    var hour = match.groupValues[1].toIntOrNull() ?: return 10 * 60
+    val minute = match.groupValues[2].toIntOrNull() ?: return 10 * 60
+    val marker = match.groupValues[3].uppercase()
+    if (marker == "PM" && hour != 12) hour += 12
+    if (marker == "AM" && hour == 12) hour = 0
+    return hour * 60 + minute
+}
+
+private fun parseEndMinutes(time: String): Int {
+    val matches = Regex("""(\d{1,2}):(\d{2})\s*(AM|PM)""", RegexOption.IGNORE_CASE).findAll(time).toList()
+    val match = matches.getOrNull(1) ?: return parseStartMinutes(time) + 60
+    var hour = match.groupValues[1].toIntOrNull() ?: return parseStartMinutes(time) + 60
+    val minute = match.groupValues[2].toIntOrNull() ?: return parseStartMinutes(time) + 60
+    val marker = match.groupValues[3].uppercase()
+    if (marker == "PM" && hour != 12) hour += 12
+    if (marker == "AM" && hour == 12) hour = 0
+    return hour * 60 + minute
+}
+
+private fun formatTimeRange(startMinutes: Int, endMinutes: Int): String {
+    return "${formatClockTime(startMinutes)} - ${formatClockTime(endMinutes)}"
+}
+
+private fun getEventFileNameFromUri(context: android.content.Context, uri: Uri): String {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) {
+                    result = cursor.getString(nameIndex)
+                }
+            }
+        }
+    }
+    return result ?: uri.path?.substringAfterLast('/') ?: "Document"
+}
+
 @Composable
 private fun EditPickerField(
     label: String,
@@ -93,6 +147,50 @@ private fun EditPickerField(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun TimeWheelColumn(
+    label: String,
+    values: List<Int>,
+    selectedValue: Int,
+    modifier: Modifier = Modifier,
+    onValueSelected: (Int) -> Unit
+) {
+    Column(modifier = modifier) {
+        Text(label, color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(6.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(LightGrayBg)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 6.dp)
+        ) {
+            values.forEach { value ->
+                val selected = value == selectedValue
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) Color(0xFFAFC2FF) else Color.Transparent)
+                        .clickable { onValueSelected(value) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "%02d".format(value),
+                        color = DarkBlue,
+                        fontSize = 18.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
         }
     }
 }
@@ -607,25 +705,28 @@ fun EditEventDialog(
     var priority by remember(event.id) { mutableStateOf(event.priority) }
     var showError by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    var showDayPicker by remember { mutableStateOf(false) }
-    var showMonthPicker by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var startMinutes by remember(event.id) { mutableIntStateOf(parseStartMinutes(event.time)) }
+    var endMinutes by remember(event.id) {
+        val parsedStart = parseStartMinutes(event.time)
+        val parsedEnd = parseEndMinutes(event.time)
+        mutableIntStateOf(if (parsedEnd > parsedStart) parsedEnd else parsedStart + 60)
+    }
     val priorities = listOf("Low", "Medium", "High")
     val months = listOf(
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     )
-    val timesList = listOf(
-        "06:30 AM - 07:00 AM",
-        "08:00 AM - 09:20 AM",
-        "10:00 AM - 10:30 AM",
-        "11:00 AM - 12:00 PM",
-        "01:30 PM - 02:30 PM",
-        "03:00 PM - 04:30 PM",
-        "06:00 PM - 07:00 PM",
-        "08:00 PM - 09:00 PM"
-    )
     val parsedYear = year.toIntOrNull() ?: event.year
     val maxDay = daysInMonth(month, parsedYear)
+    val context = LocalContext.current
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        val selectedNames = uris.map { uri -> getEventFileNameFromUri(context, uri) }
+        val currentNames = documents.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        documents = (currentNames + selectedNames).distinct().joinToString(", ")
+    }
 
     LaunchedEffect(month, parsedYear) {
         if (day > maxDay) {
@@ -664,27 +765,12 @@ fun EditEventDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     EditPickerField(
-                        label = "DAY",
-                        value = day.toString(),
-                        modifier = Modifier.weight(0.7f),
-                        onClick = { showDayPicker = true }
-                    )
-                    EditPickerField(
-                        label = "MONTH",
-                        value = month,
-                        modifier = Modifier.weight(1.3f),
-                        onClick = { showMonthPicker = true }
+                        label = "DATE",
+                        value = "$month $day, $parsedYear",
+                        modifier = Modifier.weight(1f),
+                        onClick = { showDatePicker = true }
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = year,
-                    onValueChange = { year = it },
-                    label = { Text("Year", color = TextGray) },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = link,
@@ -694,13 +780,37 @@ fun EditEventDialog(
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = documents,
-                    onValueChange = { documents = it },
-                    label = { Text("Documents", color = TextGray) },
-                    placeholder = { Text("file.pdf, notes.txt", color = TextGray) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(LightGrayBg)
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("DOCUMENTS", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (documents.isBlank()) "No documents attached" else documents,
+                                color = DarkBlue,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Button(
+                            onClick = { filePickerLauncher.launch("*/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text("Upload", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("PRIORITY", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -726,7 +836,7 @@ fun EditEventDialog(
                 }
                 if (showError) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Title, day, and year must be valid", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text("Title and time range must be valid", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
             }
         },
@@ -734,7 +844,7 @@ fun EditEventDialog(
             Button(
                 onClick = {
                     val savedYear = year.toIntOrNull()
-                    if (title.isBlank() || savedYear == null) {
+                    if (title.isBlank() || savedYear == null || endMinutes <= startMinutes) {
                         showError = true
                     } else {
                         onSave(
@@ -773,85 +883,158 @@ fun EditEventDialog(
             text = {
                 Column(
                     modifier = Modifier
-                        .height(240.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    timesList.forEach { timeSlot ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (time == timeSlot) LightBlueBg else LightGrayBg)
-                                .clickable {
-                                    time = timeSlot
-                                    showTimePicker = false
-                                }
-                                .padding(16.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            color = LightBlueBg,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = timeSlot,
-                                color = DarkBlue,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("START", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(formatClockTime(startMinutes), color = DarkBlue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Surface(
+                            color = LightBlueBg,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("FINISH", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(formatClockTime(endMinutes), color = DarkBlue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                }
-            },
-            confirmButton = {},
-            containerColor = Color.White,
-            shape = RoundedCornerShape(24.dp)
-        )
-    }
 
-    if (showMonthPicker) {
-        AlertDialog(
-            onDismissRequest = { showMonthPicker = false },
-            title = { Text("Select Month", color = DarkBlue, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .height(280.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    months.forEach { option ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (month == option) LightBlueBg else LightGrayBg)
-                                .clickable {
-                                    month = option
-                                    showMonthPicker = false
-                                }
-                                .padding(16.dp)
-                        ) {
-                            Text(
-                                text = option,
-                                color = DarkBlue,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            containerColor = Color.White,
-            shape = RoundedCornerShape(24.dp)
-        )
-    }
-
-    if (showDayPicker) {
-        AlertDialog(
-            onDismissRequest = { showDayPicker = false },
-            title = { Text("Select Day", color = DarkBlue, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Select a day in $month $parsedYear:", color = TextGray, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    Text("START TIME", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TimeWheelColumn(
+                            label = "HOUR",
+                            values = (0..23).toList(),
+                            selectedValue = startMinutes / 60,
+                            modifier = Modifier.weight(1f),
+                            onValueSelected = { hour ->
+                                startMinutes = hour * 60 + (startMinutes % 60)
+                            }
+                        )
+                        TimeWheelColumn(
+                            label = "MIN",
+                            values = (0..55 step 5).toList(),
+                            selectedValue = startMinutes % 60,
+                            modifier = Modifier.weight(1f),
+                            onValueSelected = { minute ->
+                                startMinutes = (startMinutes / 60) * 60 + minute
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text("FINISH TIME", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TimeWheelColumn(
+                            label = "HOUR",
+                            values = (0..23).toList(),
+                            selectedValue = endMinutes / 60,
+                            modifier = Modifier.weight(1f),
+                            onValueSelected = { hour ->
+                                endMinutes = hour * 60 + (endMinutes % 60)
+                            }
+                        )
+                        TimeWheelColumn(
+                            label = "MIN",
+                            values = (0..55 step 5).toList(),
+                            selectedValue = endMinutes % 60,
+                            modifier = Modifier.weight(1f),
+                            onValueSelected = { minute ->
+                                endMinutes = (endMinutes / 60) * 60 + minute
+                            }
+                        )
+                    }
+
+                    if (endMinutes <= startMinutes) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Finish time must be after start time", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (endMinutes > startMinutes) {
+                        time = formatTimeRange(startMinutes, endMinutes)
+                        showTimePicker = false
+                    }
+                }) {
+                    Text("OK", color = DarkBlue, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text("Cancel", color = DarkBlue, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showDatePicker) {
+        AlertDialog(
+            onDismissRequest = { showDatePicker = false },
+            title = { Text("Select Date", color = DarkBlue, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("$day ${month.take(3)} $parsedYear", color = DarkBlue, fontSize = 38.sp, fontWeight = FontWeight.Light)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("$month $parsedYear", color = DarkBlue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Row {
+                            IconButton(onClick = {
+                                val currentIndex = months.indexOf(month)
+                                if (currentIndex == 0) {
+                                    month = "December"
+                                    year = (parsedYear - 1).toString()
+                                } else {
+                                    month = months[currentIndex - 1]
+                                }
+                            }) {
+                                Text("<", color = DarkBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                            }
+                            IconButton(onClick = {
+                                val currentIndex = months.indexOf(month)
+                                if (currentIndex == months.lastIndex) {
+                                    month = "January"
+                                    year = (parsedYear + 1).toString()
+                                } else {
+                                    month = months[currentIndex + 1]
+                                }
+                            }) {
+                                Text(">", color = DarkBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        listOf("M", "T", "W", "T", "F", "S", "S").forEach { label ->
+                            Text(label, color = TextGray, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     (1..maxDay).toList().chunked(7).forEach { rowDays ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -865,7 +1048,6 @@ fun EditEventDialog(
                                         .background(if (day == dayNum) DarkBlue else Color.Transparent)
                                         .clickable {
                                             day = dayNum
-                                            showDayPicker = false
                                         }
                                         .padding(4.dp),
                                     contentAlignment = Alignment.Center
@@ -883,7 +1065,16 @@ fun EditEventDialog(
                     }
                 }
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("OK", color = DarkBlue, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel", color = DarkBlue, fontWeight = FontWeight.Bold)
+                }
+            },
             containerColor = Color.White,
             shape = RoundedCornerShape(24.dp)
         )

@@ -2,6 +2,7 @@ package com.example.calendarapp.ui.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -116,6 +118,7 @@ fun HomeScreen(
 
     var showMemoryDialog by remember { mutableStateOf(false) }
     var newPreferenceText by remember { mutableStateOf("") }
+    var isChatPanelExpanded by remember { mutableStateOf(false) }
     
     var showMonthDialog by remember { mutableStateOf(false) }
 
@@ -292,6 +295,84 @@ fun HomeScreen(
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp)) // Padding at bottom of event list
+                }
+            }
+
+            if (chatHistory.isNotEmpty()) {
+                Surface(
+                    color = White,
+                    shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+                    shadowElevation = 10.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(if (isChatPanelExpanded) 280.dp else 46.dp)
+                        .padding(horizontal = 16.dp)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures { _, dragAmount ->
+                                if (dragAmount < -10f) {
+                                    isChatPanelExpanded = true
+                                } else if (dragAmount > 10f) {
+                                    isChatPanelExpanded = false
+                                }
+                            }
+                        }
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isChatPanelExpanded = !isChatPanelExpanded }
+                                .padding(top = 8.dp, bottom = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(44.dp)
+                                    .height(5.dp)
+                                    .clip(CircleShape)
+                                    .background(TextGray.copy(alpha = 0.45f))
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (isChatPanelExpanded) "Jarvis conversation" else "Swipe up for Jarvis replies",
+                                color = TextGray,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        if (isChatPanelExpanded) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(chatHistory.takeLast(30), key = { it.id }) { message ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+                                    ) {
+                                        Surface(
+                                            color = if (message.isUser) DarkBlue else LightGrayBg,
+                                            shape = RoundedCornerShape(14.dp),
+                                            modifier = Modifier.widthIn(max = 280.dp)
+                                        ) {
+                                            Text(
+                                                text = message.text,
+                                                color = if (message.isUser) White else DarkBlue,
+                                                fontSize = 13.sp,
+                                                lineHeight = 17.sp,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
