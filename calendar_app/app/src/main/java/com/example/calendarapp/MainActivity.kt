@@ -338,7 +338,7 @@ class MainActivity : ComponentActivity() {
                                 selectedDay = selectedDay,
                                 selectedMonth = selectedMonth,
                                 selectedYear = selectedYear,
-                                onSaveEvent = { title, time, chosenDay, link, fileNames, year, priority ->
+                                onSaveEvent = { title, time, chosenDay, link, fileNames, fileUris, year, priority ->
                                     val newEvent = CalendarEvent(
                                         day = chosenDay,
                                         month = selectedMonth,
@@ -347,7 +347,8 @@ class MainActivity : ComponentActivity() {
                                         time = time,
                                         priority = priority,
                                         link = link.takeIf { it.isNotBlank() },
-                                        fileNames = fileNames
+                                        fileNames = fileNames,
+                                        fileUris = fileUris
                                     )
                                     eventsList.add(newEvent)
                                     highlightedEventId = newEvent.id

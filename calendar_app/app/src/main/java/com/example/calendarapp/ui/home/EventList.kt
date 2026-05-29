@@ -384,6 +384,7 @@ fun EventCard(
     var showEditDialog by remember { mutableStateOf(false) }
     var showPreviewDialog by remember { mutableStateOf(false) }
     var activePreviewFile by remember { mutableStateOf("") }
+    var activePreviewUri by remember { mutableStateOf<String?>(null) }
     
     val context = LocalContext.current
 
@@ -651,7 +652,7 @@ fun EventCard(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        event.fileNames.forEach { name ->
+                        event.fileNames.forEachIndexed { index, name ->
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -661,6 +662,7 @@ fun EventCard(
                                     .background(Color(0xFFF1F3F4))
                                     .clickable {
                                         activePreviewFile = name
+                                        activePreviewUri = event.fileUris.getOrNull(index)?.takeIf { it.isNotBlank() }
                                         showPreviewDialog = true
                                     }
                                     .padding(12.dp)
@@ -714,6 +716,7 @@ fun EventCard(
     if (showPreviewDialog) {
         FilePreviewDialog(
             fileName = activePreviewFile,
+            fileUri = activePreviewUri,
             onDismiss = { showPreviewDialog = false }
         )
     }
@@ -732,6 +735,7 @@ fun EditEventDialog(
     var year by remember(event.id) { mutableStateOf(event.year.toString()) }
     var link by remember(event.id) { mutableStateOf(event.link.orEmpty()) }
     var documents by remember(event.id) { mutableStateOf(event.fileNames.joinToString(", ")) }
+    var documentUris by remember(event.id) { mutableStateOf(event.fileUris) }
     var priority by remember(event.id) { mutableStateOf(event.priority) }
     var showError by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -751,11 +755,18 @@ fun EditEventDialog(
     val maxDay = daysInMonth(month, parsedYear)
     val context = LocalContext.current
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
+        contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
+        uris.forEach { uri ->
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+            }
+        }
         val selectedNames = uris.map { uri -> getEventFileNameFromUri(context, uri) }
         val currentNames = documents.split(",").map { it.trim() }.filter { it.isNotBlank() }
         documents = (currentNames + selectedNames).distinct().joinToString(", ")
+        documentUris = documentUris + uris.map { it.toString() }
     }
 
     LaunchedEffect(month, parsedYear) {
@@ -848,7 +859,7 @@ fun EditEventDialog(
                             )
                         }
                         Button(
-                            onClick = { filePickerLauncher.launch("*/*") },
+                            onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
                             colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
@@ -902,6 +913,7 @@ fun EditEventDialog(
                                 year = savedYear,
                                 link = link.takeIf { it.isNotBlank() },
                                 fileNames = documents.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                                fileUris = documentUris,
                                 priority = priority
                             )
                         )
@@ -1111,6 +1123,7 @@ fun EditEventDialog(
 @Composable
 fun FilePreviewDialog(
     fileName: String,
+    fileUri: String? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1334,25 +1347,22 @@ fun FilePreviewDialog(
                 onClick = {
                     Toast.makeText(context, "Opening attached file...", Toast.LENGTH_SHORT).show()
                     try {
-                        // 1. Create a dummy physical file inside context.cacheDir
-                        val file = java.io.File(context.cacheDir, fileName)
-                        file.writeText(
-                            "This is the mock physical content of the shared document: $fileName.\n\n" +
-                            "Under real-world usage, this contains the decrypted secure binary document stream."
-                        )
-                        
-                        // 2. Generate a secure FileProvider URI
-                        val fileUri = androidx.core.content.FileProvider.getUriForFile(
-                            context,
-                            "com.example.calendarapp.fileprovider",
-                            file
-                        )
-                        
-                        // 3. Launch an ACTION_VIEW Intent with package query fallback
                         val mimeType = getMimeType(fileName)
+                        val openUri = fileUri?.let { Uri.parse(it) } ?: run {
+                            val file = java.io.File(context.cacheDir, fileName)
+                            file.writeText(
+                                "This is the mock physical content of the shared document: $fileName.\n\n" +
+                                "Under real-world usage, this contains the decrypted secure binary document stream."
+                            )
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "com.example.calendarapp.fileprovider",
+                                file
+                            )
+                        }
                         try {
                             val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(fileUri, mimeType)
+                                setDataAndType(openUri, mimeType)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(Intent.createChooser(intent, "Open attached file"))
@@ -1360,7 +1370,7 @@ fun FilePreviewDialog(
                             // Fallback: try opening as text/plain so even empty emulators can preview the mock file content!
                             try {
                                 val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(fileUri, "text/plain")
+                                    setDataAndType(openUri, "text/plain")
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(Intent.createChooser(fallbackIntent, "Open attached file"))
@@ -1368,7 +1378,7 @@ fun FilePreviewDialog(
                                 // Double Fallback: Show location to user directly
                                 Toast.makeText(
                                     context, 
-                                    "No viewer installed. File saved to Cache: ${file.absolutePath}", 
+                                    "No viewer installed for this file type", 
                                     Toast.LENGTH_LONG
                                 ).show()
                             }

@@ -12,6 +12,7 @@ data class CalendarEvent(
     val priority: String = "Medium",
     val link: String? = null,
     val fileNames: List<String> = emptyList(),
+    val fileUris: List<String> = emptyList(),
     val showDelete: Boolean = true,
     val isCompleted: Boolean = false
 )

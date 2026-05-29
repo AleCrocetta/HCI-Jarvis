@@ -181,6 +181,7 @@ class JarvisViewModel : ViewModel() {
                                     priority = existingEvent?.priority ?: "Medium",
                                     link = existingEvent?.link,
                                     fileNames = existingEvent?.fileNames ?: emptyList(),
+                                    fileUris = existingEvent?.fileUris ?: emptyList(),
                                     isCompleted = existingEvent?.isCompleted ?: false
                                 )
                                 val overlap = findOverlappingEvent(modifiedEvent, currentEvents, ignoreEventId = id)

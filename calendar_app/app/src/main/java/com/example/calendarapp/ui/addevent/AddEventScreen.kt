@@ -1,5 +1,6 @@
 package com.example.calendarapp.ui.addevent
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,7 +38,7 @@ fun AddEventScreen(
     selectedDay: Int,
     selectedMonth: String,
     selectedYear: Int,
-    onSaveEvent: (title: String, time: String, chosenDay: Int, link: String, fileNames: List<String>, year: Int, priority: String) -> Unit,
+    onSaveEvent: (title: String, time: String, chosenDay: Int, link: String, fileNames: List<String>, fileUris: List<String>, year: Int, priority: String) -> Unit,
     onBack: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
@@ -47,6 +48,7 @@ fun AddEventScreen(
     var priority by remember { mutableStateOf("Medium") }
     var link by remember { mutableStateOf("") }
     var fileNames by remember { mutableStateOf<List<String>>(emptyList()) }
+    var fileUris by remember { mutableStateOf<List<String>>(emptyList()) }
     
     var isTitleError by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -57,10 +59,17 @@ fun AddEventScreen(
 
     // Native Multiple Files Storage Picker!
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
+        contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
         val names = uris.map { uri -> getFileNameFromUri(context, uri) }
+        uris.forEach { uri ->
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+            }
+        }
         fileNames = fileNames + names
+        fileUris = fileUris + uris.map { it.toString() }
     }
 
     // Sync date display when chosenDay changes
@@ -234,7 +243,7 @@ fun AddEventScreen(
                         Button(
                             onClick = { 
                                 try {
-                                    filePickerLauncher.launch("*/*") 
+                                    filePickerLauncher.launch(arrayOf("*/*")) 
                                 } catch (e: Exception) {
                                     // If emulator has NO file manager app installed, open built-in directory simulator!
                                     showMockFilePicker = true
@@ -281,6 +290,7 @@ fun AddEventScreen(
                                         .background(Color.Red.copy(alpha = 0.1f))
                                         .clickable {
                                             fileNames = fileNames.filterIndexed { i, _ -> i != index }
+                                            fileUris = fileUris.filterIndexed { i, _ -> i != index }
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -299,7 +309,7 @@ fun AddEventScreen(
                     if (title.isBlank()) {
                         isTitleError = true
                     } else {
-                        onSaveEvent(title, time, chosenDay, link, fileNames, selectedYear, priority)
+                        onSaveEvent(title, time, chosenDay, link, fileNames, fileUris, selectedYear, priority)
                     }
                 },
                 modifier = Modifier
@@ -335,9 +345,12 @@ fun AddEventScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     if (fileNames.contains(file)) {
+                                        val index = fileNames.indexOf(file)
                                         fileNames = fileNames.filter { it != file }
+                                        fileUris = fileUris.filterIndexed { i, _ -> i != index }
                                     } else {
                                         fileNames = fileNames + file
+                                        fileUris = fileUris + ""
                                     }
                                 }
                                 .padding(vertical = 12.dp, horizontal = 8.dp),
