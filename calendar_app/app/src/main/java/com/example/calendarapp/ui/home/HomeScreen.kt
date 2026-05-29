@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -143,6 +144,7 @@ fun HomeScreen(
     onSendClick: (String) -> Unit = {},
     onMicClick: () -> Unit = {},
     chatHistory: List<ChatMessage> = emptyList(),
+    highlightedEventId: String? = null,
     userPreferences: List<String>,
     onAddPreference: (String) -> Unit,
     onRemovePreference: (Int) -> Unit,
@@ -162,6 +164,7 @@ fun HomeScreen(
         }
     }
     val isSearching = searchQuery.isNotBlank()
+    val focusManager = LocalFocusManager.current
 
     val coroutineScope = rememberCoroutineScope()
     val recentlyDeletedEvents = remember { mutableStateListOf<CalendarEvent>() }
@@ -261,6 +264,7 @@ fun HomeScreen(
                             SearchResultsPanel(
                                 events = filteredEvents,
                                 onEventSelected = { event ->
+                                    focusManager.clearFocus()
                                     onDaySelected(event.day, event.month, event.year)
                                     onMonthSelected(event.month)
                                     onYearSelected(event.year)
@@ -308,7 +312,8 @@ fun HomeScreen(
                             events = filteredEvents,
                             onDeleteEvent = handleEventDeletion,
                             onCompleteEvent = onCompleteEvent,
-                            onEditEvent = onEditEvent
+                            onEditEvent = onEditEvent,
+                            highlightedEventId = highlightedEventId
                         )
                     }
                     

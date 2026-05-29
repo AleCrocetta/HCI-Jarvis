@@ -200,7 +200,8 @@ fun EventList(
     events: List<CalendarEvent>,
     onDeleteEvent: (CalendarEvent) -> Unit,
     onCompleteEvent: (CalendarEvent) -> Unit,
-    onEditEvent: (CalendarEvent) -> Unit
+    onEditEvent: (CalendarEvent) -> Unit,
+    highlightedEventId: String? = null
 ) {
     Column(
         modifier = Modifier
@@ -248,7 +249,8 @@ fun EventList(
                         event = event,
                         onDelete = { onDeleteEvent(event) },
                         onComplete = { onCompleteEvent(event) },
-                        onEditEvent = onEditEvent
+                        onEditEvent = onEditEvent,
+                        isHighlighted = event.id == highlightedEventId
                     )
                 }
 
@@ -266,7 +268,8 @@ fun SwipeableEventItem(
     event: CalendarEvent,
     onDelete: () -> Unit,
     onComplete: () -> Unit,
-    onEditEvent: (CalendarEvent) -> Unit
+    onEditEvent: (CalendarEvent) -> Unit,
+    isHighlighted: Boolean = false
 ) {
     var isDeleted by remember { mutableStateOf(false) }
 
@@ -339,7 +342,8 @@ fun SwipeableEventItem(
                     event = event,
                     onDelete = onDelete,
                     onComplete = onComplete,
-                    onEditEvent = onEditEvent
+                    onEditEvent = onEditEvent,
+                    isHighlighted = isHighlighted
                 )
             }
         )
@@ -351,7 +355,8 @@ fun EventCard(
     event: CalendarEvent,
     onDelete: () -> Unit,
     onComplete: () -> Unit,
-    onEditEvent: (CalendarEvent) -> Unit
+    onEditEvent: (CalendarEvent) -> Unit,
+    isHighlighted: Boolean = false
 ) {
     var showDetailsDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -360,11 +365,14 @@ fun EventCard(
     
     val context = LocalContext.current
 
+    val cardShape = RoundedCornerShape(24.dp)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(if (event.isCompleted) LightGrayBg.copy(alpha = 0.6f) else LightGrayBg)
+            .clip(cardShape)
+            .background(if (isHighlighted) LightBlueBg else if (event.isCompleted) LightGrayBg.copy(alpha = 0.6f) else LightGrayBg)
+            .then(if (isHighlighted) Modifier.border(1.5.dp, Color(0xFF4A90E2).copy(alpha = 0.55f), cardShape) else Modifier)
             .clickable { showDetailsDialog = true } // Click card to trigger premium details dialog!
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {

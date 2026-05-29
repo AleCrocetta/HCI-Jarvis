@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
                     var viewAllEvents by remember { mutableStateOf(false) }
                     var selectedMonth by remember { mutableStateOf(currentMonth) }
                     var selectedYear by remember { mutableIntStateOf(currentYear) }
+                    var highlightedEventId by remember { mutableStateOf<String?>(null) }
                     val memoryStore = remember { getSharedPreferences("jarvis_memory", Context.MODE_PRIVATE) }
                     var showFirstRunPreferences by remember { mutableStateOf(!memoryStore.getBoolean("preferences_saved", false)) }
                     val userPreferences = remember {
@@ -160,6 +161,7 @@ class MainActivity : ComponentActivity() {
                             userPreferences = userPreferences.toList(),
                             onAddEvent = { event -> 
                                 eventsList.add(event)
+                                highlightedEventId = event.id
                                 selectedDay = event.day
                                 selectedDayMonth = event.month
                                 selectedDayYear = event.year
@@ -170,6 +172,7 @@ class MainActivity : ComponentActivity() {
                             onRemoveEvent = { id ->
                                 val removedEvent = eventsList.firstOrNull { it.id == id }
                                 eventsList.removeAll { it.id == id }
+                                highlightedEventId = null
                                 if (removedEvent != null) {
                                     selectedDay = removedEvent.day
                                     selectedDayMonth = removedEvent.month
@@ -183,6 +186,7 @@ class MainActivity : ComponentActivity() {
                                 val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
                                 if (index != -1) {
                                     eventsList[index] = modifiedEvent
+                                    highlightedEventId = modifiedEvent.id
                                     selectedDay = modifiedEvent.day
                                     selectedDayMonth = modifiedEvent.month
                                     selectedDayYear = modifiedEvent.year
@@ -234,6 +238,7 @@ class MainActivity : ComponentActivity() {
                                     val index = eventsList.indexOfFirst { it.id == event.id }
                                     if (index != -1) {
                                         eventsList[index] = event
+                                        highlightedEventId = event.id
                                         selectedDay = event.day
                                         selectedDayMonth = event.month
                                         selectedDayYear = event.year
@@ -262,6 +267,7 @@ class MainActivity : ComponentActivity() {
                                         userPreferences = userPreferences.toList(),
                                         onAddEvent = { event -> 
                                             eventsList.add(event)
+                                            highlightedEventId = event.id
                                             selectedDay = event.day
                                             selectedDayMonth = event.month
                                             selectedDayYear = event.year
@@ -272,6 +278,7 @@ class MainActivity : ComponentActivity() {
                                         onRemoveEvent = { id ->
                                             val removedEvent = eventsList.firstOrNull { it.id == id }
                                             eventsList.removeAll { it.id == id }
+                                            highlightedEventId = null
                                             if (removedEvent != null) {
                                                 selectedDay = removedEvent.day
                                                 selectedDayMonth = removedEvent.month
@@ -285,6 +292,7 @@ class MainActivity : ComponentActivity() {
                                             val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
                                             if (index != -1) {
                                                 eventsList[index] = modifiedEvent
+                                                highlightedEventId = modifiedEvent.id
                                                 selectedDay = modifiedEvent.day
                                                 selectedDayMonth = modifiedEvent.month
                                                 selectedDayYear = modifiedEvent.year
@@ -304,6 +312,7 @@ class MainActivity : ComponentActivity() {
                                     speechRecognizerLauncher.launch(intent)
                                 },
                                 chatHistory = chatHistory,
+                                highlightedEventId = highlightedEventId,
                                 userPreferences = userPreferences.toList(),
                                 onAddPreference = { preference ->
                                     userPreferences.add(preference)
@@ -330,18 +339,18 @@ class MainActivity : ComponentActivity() {
                                 selectedMonth = selectedMonth,
                                 selectedYear = selectedYear,
                                 onSaveEvent = { title, time, chosenDay, link, fileNames, year, priority ->
-                                    eventsList.add(
-                                        CalendarEvent(
-                                            day = chosenDay,
-                                            month = selectedMonth,
-                                            year = year,
-                                            title = title.uppercase(),
-                                            time = time,
-                                            priority = priority,
-                                            link = link.takeIf { it.isNotBlank() },
-                                            fileNames = fileNames
-                                        )
+                                    val newEvent = CalendarEvent(
+                                        day = chosenDay,
+                                        month = selectedMonth,
+                                        year = year,
+                                        title = title.uppercase(),
+                                        time = time,
+                                        priority = priority,
+                                        link = link.takeIf { it.isNotBlank() },
+                                        fileNames = fileNames
                                     )
+                                    eventsList.add(newEvent)
+                                    highlightedEventId = newEvent.id
                                     // Set focus to the new day so the user sees their event immediately!
                                     selectedDay = chosenDay
                                     selectedDayMonth = selectedMonth
