@@ -53,6 +53,7 @@ fun HomeScreen(
     onDeleteEvent: (CalendarEvent) -> Unit,
     onRestoreEvent: (CalendarEvent) -> Unit,
     onCompleteEvent: (CalendarEvent) -> Unit,
+    onEditEvent: (CalendarEvent) -> Unit,
     activeTab: String,
     onTabSelected: (String) -> Unit,
     searchQuery: String,
@@ -288,7 +289,8 @@ fun HomeScreen(
                         EventList(
                             events = filteredEvents,
                             onDeleteEvent = handleEventDeletion,
-                            onCompleteEvent = onCompleteEvent
+                            onCompleteEvent = onCompleteEvent,
+                            onEditEvent = onEditEvent
                         )
                     }
                     

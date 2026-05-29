@@ -42,12 +42,18 @@ fun TodaySection(
         else -> 1
     }
 
+    val selectedDate = try {
+        LocalDate.of(selectedYear, monthIndex, selectedDay)
+    } catch (e: Exception) {
+        null
+    }
+
     val weekday = try {
-        val date = LocalDate.of(selectedYear, monthIndex, selectedDay)
-        date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
+        selectedDate?.dayOfWeek?.getDisplayName(TextStyle.FULL, Locale.getDefault()) ?: "Unknown"
     } catch (e: Exception) {
         "Unknown"
     }
+    val sectionTitle = if (selectedDate == LocalDate.now()) "TODAY" else "SELECTED DAY"
 
     val eventText = when (eventCount) {
         0 -> "No events"
@@ -61,7 +67,7 @@ fun TodaySection(
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Text(
-            text = "SELECTED DAY",
+            text = sectionTitle,
             color = TextGray,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,

@@ -9,6 +9,7 @@ data class CalendarEvent(
     val year: Int = 2026,
     val title: String,
     val time: String,
+    val priority: String = "Medium",
     val link: String? = null,
     val fileNames: List<String> = emptyList(),
     val showDelete: Boolean = true,

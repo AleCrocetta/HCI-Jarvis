@@ -276,6 +276,7 @@ fun CalendarMonthGrid(
                             CalendarCell(
                                 day = dayNum.toString(),
                                 isSelected = isSelected,
+                                isToday = isToday,
                                 bgColor = cellBgColor,
                                 textColor = cellTextColor,
                                 isPast = isCellPast,
@@ -308,6 +309,7 @@ fun CalendarMonthGrid(
 fun CalendarCell(
     day: String,
     isSelected: Boolean = false,
+    isToday: Boolean = false,
     bgColor: Color = Color.Transparent,
     textColor: Color = DarkBlue,
     isPast: Boolean = false,
@@ -323,7 +325,9 @@ fun CalendarCell(
         else -> textColor
     }
     
-    val borderModifier = if (isSelected && bgColor != Color.Transparent) {
+    val borderModifier = if (isToday) {
+        Modifier.border(3.dp, PrimaryBlue, CircleShape)
+    } else if (isSelected && bgColor != Color.Transparent) {
         Modifier.border(2.dp, DarkBlue, CircleShape)
     } else {
         Modifier
@@ -345,7 +349,7 @@ fun CalendarCell(
             Text(
                 text = day,
                 color = actualTextColor,
-                fontWeight = if (isSelected || !isPast) FontWeight.Medium else FontWeight.Normal,
+                fontWeight = if (isToday || isSelected || !isPast) FontWeight.Bold else FontWeight.Normal,
                 fontSize = 14.sp
             )
         }

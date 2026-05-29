@@ -37,13 +37,14 @@ fun AddEventScreen(
     selectedDay: Int,
     selectedMonth: String,
     selectedYear: Int,
-    onSaveEvent: (title: String, time: String, chosenDay: Int, link: String, fileNames: List<String>, year: Int) -> Unit,
+    onSaveEvent: (title: String, time: String, chosenDay: Int, link: String, fileNames: List<String>, year: Int, priority: String) -> Unit,
     onBack: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var chosenDay by remember { mutableIntStateOf(selectedDay) }
     var date by remember { mutableStateOf("$selectedMonth $selectedDay, $selectedYear") }
     var time by remember { mutableStateOf("10:00 AM - 11:00 AM") }
+    var priority by remember { mutableStateOf("Medium") }
     var link by remember { mutableStateOf("") }
     var fileNames by remember { mutableStateOf<List<String>>(emptyList()) }
     
@@ -163,6 +164,32 @@ fun AddEventScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                Text("PRIORITY", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Low", "Medium", "High").forEach { option ->
+                        val selected = priority == option
+                        Surface(
+                            color = if (selected) DarkBlue else LightGrayBg,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { priority = option }
+                        ) {
+                            Text(
+                                text = option,
+                                color = if (selected) White else DarkBlue,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(vertical = 12.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 // Modern URL Link input field
                 OutlinedTextField(
                     value = link,
@@ -272,7 +299,7 @@ fun AddEventScreen(
                     if (title.isBlank()) {
                         isTitleError = true
                     } else {
-                        onSaveEvent(title, time, chosenDay, link, fileNames, selectedYear)
+                        onSaveEvent(title, time, chosenDay, link, fileNames, selectedYear, priority)
                     }
                 },
                 modifier = Modifier

@@ -196,6 +196,18 @@ class MainActivity : ComponentActivity() {
                                         eventsList[index] = eventsList[index].copy(isCompleted = !eventsList[index].isCompleted)
                                     }
                                 },
+                                onEditEvent = { event ->
+                                    val index = eventsList.indexOfFirst { it.id == event.id }
+                                    if (index != -1) {
+                                        eventsList[index] = event
+                                        selectedDay = event.day
+                                        selectedDayMonth = event.month
+                                        selectedDayYear = event.year
+                                        selectedMonth = event.month
+                                        selectedYear = event.year
+                                        viewAllEvents = false
+                                    }
+                                },
                                 activeTab = activeTab,
                                 onTabSelected = { tab -> activeTab = tab },
                                 searchQuery = searchQuery,
@@ -253,7 +265,7 @@ class MainActivity : ComponentActivity() {
                                 selectedDay = selectedDay,
                                 selectedMonth = selectedMonth,
                                 selectedYear = selectedYear,
-                                onSaveEvent = { title, time, chosenDay, link, fileNames, year ->
+                                onSaveEvent = { title, time, chosenDay, link, fileNames, year, priority ->
                                     eventsList.add(
                                         CalendarEvent(
                                             day = chosenDay,
@@ -261,6 +273,7 @@ class MainActivity : ComponentActivity() {
                                             year = year,
                                             title = title.uppercase(),
                                             time = time,
+                                            priority = priority,
                                             link = link.takeIf { it.isNotBlank() },
                                             fileNames = fileNames
                                         )
