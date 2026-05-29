@@ -367,12 +367,32 @@ fun EventCard(
         AlertDialog(
             onDismissRequest = { showDetailsDialog = false },
             title = {
-                Text(
-                    text = "Event Details",
-                    color = DarkBlue,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Event Details",
+                        color = DarkBlue,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
+                    IconButton(
+                        onClick = {
+                            showDetailsDialog = false
+                            showEditDialog = true
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = "Edit event",
+                            tint = DarkBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {

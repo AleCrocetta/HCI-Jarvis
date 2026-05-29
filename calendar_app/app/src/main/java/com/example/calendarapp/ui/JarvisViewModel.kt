@@ -17,6 +17,44 @@ import java.util.UUID
 
 data class ChatMessage(val id: String = UUID.randomUUID().toString(), val text: String, val isUser: Boolean)
 
+private fun parseEventTimeRange(time: String): IntRange? {
+    val parts = time.split(" - ")
+    if (parts.size != 2) return null
+
+    fun parseTime(value: String): Int? {
+        val match = Regex("""(\d{1,2}):(\d{2})\s*(AM|PM)""", RegexOption.IGNORE_CASE).find(value.trim()) ?: return null
+        var hour = match.groupValues[1].toIntOrNull() ?: return null
+        val minute = match.groupValues[2].toIntOrNull() ?: return null
+        val marker = match.groupValues[3].uppercase()
+        if (hour !in 1..12 || minute !in 0..59) return null
+        if (marker == "PM" && hour != 12) hour += 12
+        if (marker == "AM" && hour == 12) hour = 0
+        return hour * 60 + minute
+    }
+
+    val start = parseTime(parts[0]) ?: return null
+    val end = parseTime(parts[1]) ?: return null
+    if (end <= start) return null
+    return start until end
+}
+
+private fun findOverlappingEvent(
+    candidate: CalendarEvent,
+    events: List<CalendarEvent>,
+    ignoreEventId: String? = null
+): CalendarEvent? {
+    val candidateRange = parseEventTimeRange(candidate.time) ?: return null
+    return events.firstOrNull { event ->
+        event.id != ignoreEventId &&
+            event.day == candidate.day &&
+            event.month.equals(candidate.month, ignoreCase = true) &&
+            event.year == candidate.year &&
+            parseEventTimeRange(event.time)?.let { existingRange ->
+                candidateRange.first < existingRange.last && existingRange.first < candidateRange.last
+            } == true
+    }
+}
+
 class JarvisViewModel : ViewModel() {
     
     private val apiKey = com.example.calendarapp.BuildConfig.GEMINI_API_KEY
@@ -59,12 +97,13 @@ class JarvisViewModel : ViewModel() {
         modelName = "gemini-2.5-flash",
         apiKey = apiKey,
         tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction))),
-        systemInstruction = content { text("You are Jarvis, an AI calendar assistant. Your job is to help the user manage their calendar events. You can create, delete, or modify events using the provided tools. ALWAYS respond in the SAME language that the user uses to speak to you.") }
+        systemInstruction = content { text("You are Jarvis, an AI calendar assistant. Your job is to help the user manage their calendar events. Use the provided user preferences/memory when scheduling study tasks, avoid creating overlapping events, and ask before changing or deleting an existing overlapping event. You can create, delete, or modify events using the provided tools. ALWAYS respond in the SAME language that the user uses to speak to you.") }
     )
 
     fun handleUserPrompt(
         prompt: String,
         currentEvents: List<CalendarEvent>,
+        userPreferences: List<String> = emptyList(),
         onAddEvent: (CalendarEvent) -> Unit,
         onRemoveEvent: (String) -> Unit,
         onModifyEvent: (CalendarEvent) -> Unit
@@ -81,7 +120,13 @@ class JarvisViewModel : ViewModel() {
                 // Context about current events
                 var contextStr = "Today's Date: ${java.util.Calendar.getInstance().time}\n\nCurrent Events:\n"
                 currentEvents.forEach {
-                    contextStr += "ID: ${it.id}, Title: ${it.title}, Date: ${it.month} ${it.day}, ${it.year}, Time: ${it.time}\n"
+                    contextStr += "ID: ${it.id}, Title: ${it.title}, Date: ${it.month} ${it.day}, ${it.year}, Time: ${it.time}, Priority: ${it.priority}\n"
+                }
+                if (userPreferences.isNotEmpty()) {
+                    contextStr += "\nUser Preferences / Memory:\n"
+                    userPreferences.forEach { preference ->
+                        contextStr += "- $preference\n"
+                    }
                 }
                 
                 val historyList = previousHistory.map { msg ->
@@ -106,8 +151,13 @@ class JarvisViewModel : ViewModel() {
                                 title = args["title"]?.toString()?.uppercase() ?: "NEW EVENT",
                                 time = args["time"]?.toString() ?: "12:00 PM"
                             )
-                            onAddEvent(event)
-                            if (responseText.isBlank()) responseText = "Ho creato l'evento: ${event.title}."
+                            val overlap = findOverlappingEvent(event, currentEvents)
+                            if (overlap != null) {
+                                responseText = "L'evento ${event.title} si sovrappone con ${overlap.title} (${overlap.time}, ${overlap.month} ${overlap.day}). Vuoi spostare o eliminare uno degli eventi?"
+                            } else {
+                                onAddEvent(event)
+                                if (responseText.isBlank()) responseText = "Ho creato l'evento: ${event.title}."
+                            }
                         }
                         "delete_event" -> {
                             val id = call.args["eventId"]?.toString() ?: call.args.values.firstOrNull()?.toString()
@@ -120,16 +170,26 @@ class JarvisViewModel : ViewModel() {
                             val args = call.args
                             val id = args["eventId"]?.toString()
                             if (id != null) {
+                                val existingEvent = currentEvents.firstOrNull { it.id == id }
                                 val modifiedEvent = CalendarEvent(
                                     id = id,
                                     day = args["day"]?.toString()?.toFloat()?.toInt() ?: 1,
                                     month = args["month"]?.toString() ?: "January",
                                     year = args["year"]?.toString()?.toFloat()?.toInt() ?: 2026,
                                     title = args["title"]?.toString()?.uppercase() ?: "UPDATED EVENT",
-                                    time = args["time"]?.toString() ?: "12:00 PM"
+                                    time = args["time"]?.toString() ?: "12:00 PM",
+                                    priority = existingEvent?.priority ?: "Medium",
+                                    link = existingEvent?.link,
+                                    fileNames = existingEvent?.fileNames ?: emptyList(),
+                                    isCompleted = existingEvent?.isCompleted ?: false
                                 )
-                                onModifyEvent(modifiedEvent)
-                                if (responseText.isBlank()) responseText = "Ho modificato l'evento: ${modifiedEvent.title}."
+                                val overlap = findOverlappingEvent(modifiedEvent, currentEvents, ignoreEventId = id)
+                                if (overlap != null) {
+                                    responseText = "La modifica di ${modifiedEvent.title} si sovrappone con ${overlap.title} (${overlap.time}, ${overlap.month} ${overlap.day}). Vuoi spostare o eliminare uno degli eventi?"
+                                } else {
+                                    onModifyEvent(modifiedEvent)
+                                    if (responseText.isBlank()) responseText = "Ho modificato l'evento: ${modifiedEvent.title}."
+                                }
                             }
                         }
                     }

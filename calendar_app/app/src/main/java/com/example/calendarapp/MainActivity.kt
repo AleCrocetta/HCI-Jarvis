@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import android.content.Intent
+import android.content.Context
 import android.speech.RecognizerIntent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -76,6 +77,27 @@ class MainActivity : ComponentActivity() {
                     var viewAllEvents by remember { mutableStateOf(false) }
                     var selectedMonth by remember { mutableStateOf(currentMonth) }
                     var selectedYear by remember { mutableIntStateOf(currentYear) }
+                    val memoryStore = remember { getSharedPreferences("jarvis_memory", Context.MODE_PRIVATE) }
+                    var showFirstRunPreferences by remember { mutableStateOf(!memoryStore.getBoolean("preferences_saved", false)) }
+                    val userPreferences = remember {
+                        val savedPreferences = memoryStore.getString("user_preferences", "").orEmpty()
+                        mutableStateListOf<String>().apply {
+                            if (savedPreferences.isNotBlank()) {
+                                addAll(savedPreferences.lines().filter { it.isNotBlank() })
+                            } else {
+                                add("Schedule training in the morning")
+                                add("Gym sessions at 8:00 AM")
+                                add("Meetings must have video link")
+                                add("Highlight flight events with indicator")
+                            }
+                        }
+                    }
+                    fun saveUserPreferences() {
+                        memoryStore.edit()
+                            .putString("user_preferences", userPreferences.joinToString("\n"))
+                            .putBoolean("preferences_saved", true)
+                            .apply()
+                    }
                     
                     val eventsList = remember {
                         mutableStateListOf<CalendarEvent>(
@@ -135,6 +157,7 @@ class MainActivity : ComponentActivity() {
                         jarvisViewModel.handleUserPrompt(
                             prompt = text,
                             currentEvents = eventsList.toList(),
+                            userPreferences = userPreferences.toList(),
                             onAddEvent = { event -> 
                                 eventsList.add(event)
                                 selectedDay = event.day
@@ -144,7 +167,18 @@ class MainActivity : ComponentActivity() {
                                 selectedYear = event.year
                                 viewAllEvents = false
                             },
-                            onRemoveEvent = { id -> eventsList.removeAll { it.id == id } },
+                            onRemoveEvent = { id ->
+                                val removedEvent = eventsList.firstOrNull { it.id == id }
+                                eventsList.removeAll { it.id == id }
+                                if (removedEvent != null) {
+                                    selectedDay = removedEvent.day
+                                    selectedDayMonth = removedEvent.month
+                                    selectedDayYear = removedEvent.year
+                                    selectedMonth = removedEvent.month
+                                    selectedYear = removedEvent.year
+                                    viewAllEvents = false
+                                }
+                            },
                             onModifyEvent = { modifiedEvent ->
                                 val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
                                 if (index != -1) {
@@ -225,6 +259,7 @@ class MainActivity : ComponentActivity() {
                                     jarvisViewModel.handleUserPrompt(
                                         prompt = text,
                                         currentEvents = eventsList.toList(),
+                                        userPreferences = userPreferences.toList(),
                                         onAddEvent = { event -> 
                                             eventsList.add(event)
                                             selectedDay = event.day
@@ -234,7 +269,18 @@ class MainActivity : ComponentActivity() {
                                             selectedYear = event.year
                                             viewAllEvents = false
                                         },
-                                        onRemoveEvent = { id -> eventsList.removeAll { it.id == id } },
+                                        onRemoveEvent = { id ->
+                                            val removedEvent = eventsList.firstOrNull { it.id == id }
+                                            eventsList.removeAll { it.id == id }
+                                            if (removedEvent != null) {
+                                                selectedDay = removedEvent.day
+                                                selectedDayMonth = removedEvent.month
+                                                selectedDayYear = removedEvent.year
+                                                selectedMonth = removedEvent.month
+                                                selectedYear = removedEvent.year
+                                                viewAllEvents = false
+                                            }
+                                        },
                                         onModifyEvent = { modifiedEvent ->
                                             val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
                                             if (index != -1) {
@@ -257,7 +303,25 @@ class MainActivity : ComponentActivity() {
                                     }
                                     speechRecognizerLauncher.launch(intent)
                                 },
-                                chatHistory = chatHistory
+                                chatHistory = chatHistory,
+                                userPreferences = userPreferences.toList(),
+                                onAddPreference = { preference ->
+                                    userPreferences.add(preference)
+                                    saveUserPreferences()
+                                },
+                                onRemovePreference = { index ->
+                                    if (index in userPreferences.indices) {
+                                        userPreferences.removeAt(index)
+                                        saveUserPreferences()
+                                    }
+                                },
+                                showFirstRunPreferences = showFirstRunPreferences,
+                                onFirstRunPreferencesDone = { preferences ->
+                                    userPreferences.clear()
+                                    userPreferences.addAll(preferences)
+                                    showFirstRunPreferences = false
+                                    saveUserPreferences()
+                                }
                             )
                         }
                         composable("add_event") {
@@ -280,6 +344,9 @@ class MainActivity : ComponentActivity() {
                                     )
                                     // Set focus to the new day so the user sees their event immediately!
                                     selectedDay = chosenDay
+                                    selectedDayMonth = selectedMonth
+                                    selectedDayYear = year
+                                    selectedYear = year
                                     navController.popBackStack()
                                 },
                                 onBack = {

@@ -67,7 +67,12 @@ fun HomeScreen(
     onAddEventClick: () -> Unit,
     onSendClick: (String) -> Unit = {},
     onMicClick: () -> Unit = {},
-    chatHistory: List<ChatMessage> = emptyList()
+    chatHistory: List<ChatMessage> = emptyList(),
+    userPreferences: List<String>,
+    onAddPreference: (String) -> Unit,
+    onRemovePreference: (Int) -> Unit,
+    showFirstRunPreferences: Boolean,
+    onFirstRunPreferencesDone: (List<String>) -> Unit
 ) {
     // Filter events dynamically based on day, month, year and search query
     val filteredEvents = events.filter { event ->
@@ -110,14 +115,6 @@ fun HomeScreen(
     }
 
     var showMemoryDialog by remember { mutableStateOf(false) }
-    val userPreferences = remember { 
-        mutableStateListOf(
-            "Schedule training in the morning",
-            "Gym sessions at 8:00 AM",
-            "Meetings must have video link",
-            "Highlight flight events with indicator"
-        )
-    }
     var newPreferenceText by remember { mutableStateOf("") }
     
     var showMonthDialog by remember { mutableStateOf(false) }
@@ -425,7 +422,7 @@ fun HomeScreen(
                         Button(
                             onClick = {
                                 if (newPreferenceText.isNotBlank()) {
-                                    userPreferences.add(newPreferenceText)
+                                    onAddPreference(newPreferenceText)
                                     newPreferenceText = ""
                                 }
                             },
@@ -470,7 +467,7 @@ fun HomeScreen(
                                     text = "❌",
                                     fontSize = 10.sp,
                                     modifier = Modifier
-                                        .clickable { userPreferences.removeAt(index) }
+                                        .clickable { onRemovePreference(index) }
                                         .padding(4.dp)
                                 )
                             }
@@ -481,6 +478,115 @@ fun HomeScreen(
             confirmButton = {
                 TextButton(onClick = { showMemoryDialog = false }) {
                     Text("Done", color = DarkBlue, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = White,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showFirstRunPreferences) {
+        var occupiedDays by remember { mutableStateOf("") }
+        var occupiedTimes by remember { mutableStateOf("") }
+        var studyTime by remember { mutableStateOf("2 hours") }
+        var wantsBreaks by remember { mutableStateOf(true) }
+        var breakLength by remember { mutableStateOf("10 minutes") }
+        var studyManagement by remember { mutableStateOf("Balanced study plan") }
+
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Text(
+                    text = "Study Preferences",
+                    color = DarkBlue,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "Jarvis will use this memory when planning tasks and avoiding overlaps.",
+                        color = TextGray,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = occupiedDays,
+                        onValueChange = { occupiedDays = it },
+                        label = { Text("Occupied days", color = TextGray) },
+                        placeholder = { Text("Monday, Wednesday...", color = TextGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = occupiedTimes,
+                        onValueChange = { occupiedTimes = it },
+                        label = { Text("Occupied time", color = TextGray) },
+                        placeholder = { Text("09:00 AM - 01:00 PM", color = TextGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = studyTime,
+                        onValueChange = { studyTime = it },
+                        label = { Text("Daily study time", color = TextGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Breaks during study", color = DarkBlue, fontWeight = FontWeight.SemiBold)
+                        Switch(checked = wantsBreaks, onCheckedChange = { wantsBreaks = it })
+                    }
+                    if (wantsBreaks) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = breakLength,
+                            onValueChange = { breakLength = it },
+                            label = { Text("Break length", color = TextGray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = studyManagement,
+                        onValueChange = { studyManagement = it },
+                        label = { Text("Study management style", color = TextGray) },
+                        placeholder = { Text("Intensive, balanced, spaced repetition...", color = TextGray) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onFirstRunPreferencesDone(
+                            listOf(
+                                "Occupied days: ${occupiedDays.ifBlank { "Not specified" }}",
+                                "Occupied time: ${occupiedTimes.ifBlank { "Not specified" }}",
+                                "Daily study time: ${studyTime.ifBlank { "Not specified" }}",
+                                "Study breaks: ${if (wantsBreaks) "Yes, $breakLength" else "No"}",
+                                "Study management style: ${studyManagement.ifBlank { "Not specified" }}"
+                            )
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Save Preferences", color = White, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = White,

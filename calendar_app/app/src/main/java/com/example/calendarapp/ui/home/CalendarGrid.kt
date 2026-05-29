@@ -257,12 +257,12 @@ fun CalendarMonthGrid(
                             val isCellPast = cellDate != null && cellDate.isBefore(today)
                             val isToday = cellDate != null && cellDate.isEqual(today)
 
+                            val remainingEvents = dayEvents.count { !it.isCompleted }
                             val cellBgColor = when {
-                                isCellPast -> Color(0xFFE0E0E0)
                                 dayEvents.isEmpty() -> Color.Transparent
-                                isToday && dayEvents.all { it.isCompleted } -> Color(0xFF81C784)
-                                dayEvents.size in 1..2 -> Color(0xFFFFF9C4)
-                                dayEvents.size in 3..5 -> Color(0xFFFFCC80)
+                                remainingEvents == 0 -> Color(0xFF81C784)
+                                remainingEvents in 1..2 -> Color(0xFFFFF9C4)
+                                remainingEvents in 3..5 -> Color(0xFFFFCC80)
                                 else -> Color(0xFFEF5350)
                             }
 
