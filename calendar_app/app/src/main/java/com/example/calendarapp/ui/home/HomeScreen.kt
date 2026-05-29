@@ -44,6 +44,79 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 
+@Composable
+private fun SearchResultsPanel(
+    events: List<CalendarEvent>,
+    onEventSelected: (CalendarEvent) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+    ) {
+        if (events.isEmpty()) {
+            Surface(
+                color = LightGrayBg,
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "No matching events",
+                    color = TextGray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+                )
+            }
+        } else {
+            events.forEachIndexed { index, event ->
+                Surface(
+                    color = LightBlueBg,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onEventSelected(event) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = event.day.toString(),
+                            color = DarkBlue,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(40.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = event.title,
+                                color = DarkBlue,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = event.time,
+                                color = TextGray,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Text(
+                            text = "${event.month.take(3)} ${event.year}",
+                            color = TextGray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                if (index < events.size - 1) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -184,20 +257,36 @@ fun HomeScreen(
                             searchQuery = searchQuery,
                             onSearchQueryChanged = onSearchQueryChanged
                         )
-                        CalendarGrid(
-                            selectedDay = selectedDay,
-                            selectedDayMonth = selectedDayMonth,
-                            selectedDayYear = selectedDayYear,
-                            onDaySelected = onDaySelected,
-                            events = events,
-                            selectedMonth = selectedMonth,
-                            selectedYear = selectedYear,
-                            onMonthSelected = onMonthSelected,
-                            onYearSelected = onYearSelected,
-                            onPreviousMonth = { onPreviousMonth() },
-                            onNextMonth = { onNextMonth() }
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
+                        if (isSearching) {
+                            SearchResultsPanel(
+                                events = filteredEvents,
+                                onEventSelected = { event ->
+                                    onDaySelected(event.day, event.month, event.year)
+                                    onMonthSelected(event.month)
+                                    onYearSelected(event.year)
+                                    onSearchQueryChanged("")
+                                },
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp)
+                                    .heightIn(max = 220.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                        } else {
+                            CalendarGrid(
+                                selectedDay = selectedDay,
+                                selectedDayMonth = selectedDayMonth,
+                                selectedDayYear = selectedDayYear,
+                                onDaySelected = onDaySelected,
+                                events = events,
+                                selectedMonth = selectedMonth,
+                                selectedYear = selectedYear,
+                                onMonthSelected = onMonthSelected,
+                                onYearSelected = onYearSelected,
+                                onPreviousMonth = { onPreviousMonth() },
+                                onNextMonth = { onNextMonth() }
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
                     }
                 }
                 
@@ -207,78 +296,7 @@ fun HomeScreen(
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    if (isSearching) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 16.dp)
-                        ) {
-                            if (filteredEvents.isEmpty()) {
-                                Surface(
-                                    color = LightGrayBg,
-                                    shape = RoundedCornerShape(24.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "No matching events",
-                                        color = TextGray,
-                                        fontSize = 14.sp,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-                                    )
-                                }
-                            } else {
-                                filteredEvents.forEachIndexed { index, event ->
-                                    Surface(
-                                        color = LightBlueBg,
-                                        shape = RoundedCornerShape(16.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                onDaySelected(event.day, event.month, event.year)
-                                                onMonthSelected(event.month)
-                                                onYearSelected(event.year)
-                                                onSearchQueryChanged("")
-                                            }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = event.day.toString(),
-                                                color = DarkBlue,
-                                                fontSize = 20.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.width(40.dp)
-                                            )
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = event.title,
-                                                    color = DarkBlue,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Text(
-                                                    text = event.time,
-                                                    color = TextGray,
-                                                    fontSize = 12.sp
-                                                )
-                                            }
-                                            Text(
-                                                text = "${event.month.take(3)} ${event.year}",
-                                                color = TextGray,
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    }
-
-                                    if (index < filteredEvents.size - 1) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                    }
-                                }
-                            }
-                        }
-                    } else {
+                    if (!isSearching) {
                         TodaySection(
                             selectedDay = selectedDay,
                             selectedMonth = selectedMonth,
