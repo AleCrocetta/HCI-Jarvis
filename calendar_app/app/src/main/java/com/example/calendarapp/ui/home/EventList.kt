@@ -14,6 +14,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,6 +70,22 @@ private fun daysInMonth(month: String, year: Int): Int {
         set(java.util.Calendar.MONTH, monthIndex)
         set(java.util.Calendar.DAY_OF_MONTH, 1)
     }.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+}
+
+private fun monthIndex(month: String): Int {
+    return listOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ).indexOfFirst { it.equals(month, ignoreCase = true) }.coerceAtLeast(0)
+}
+
+private fun firstDayOffset(month: String, year: Int): Int {
+    val dayOfWeek = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.YEAR, year)
+        set(java.util.Calendar.MONTH, monthIndex(month))
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
+    }.get(java.util.Calendar.DAY_OF_WEEK)
+    return (dayOfWeek + 5) % 7
 }
 
 private fun formatClockTime(totalMinutes: Int): String {
@@ -121,6 +139,10 @@ private fun getEventFileNameFromUri(context: android.content.Context, uri: Uri):
         }
     }
     return result ?: uri.path?.substringAfterLast('/') ?: "Document"
+}
+
+private fun supportsTextPreview(fileName: String): Boolean {
+    return listOf(".txt", ".md", ".csv", ".json", ".xml", ".log").any { fileName.endsWith(it, ignoreCase = true) }
 }
 
 @Composable
@@ -742,6 +764,22 @@ fun EditEventDialog(
         }
     }
 
+    fun moveEditMonth(delta: Int) {
+        val currentIndex = months.indexOf(month)
+        val nextIndex = currentIndex + delta
+        when {
+            nextIndex < 0 -> {
+                month = "December"
+                year = (parsedYear - 1).toString()
+            }
+            nextIndex > months.lastIndex -> {
+                month = "January"
+                year = (parsedYear + 1).toString()
+            }
+            else -> month = months[nextIndex]
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Event", color = DarkBlue, fontWeight = FontWeight.Bold) },
@@ -895,34 +933,6 @@ fun EditEventDialog(
                         .heightIn(max = 520.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            color = LightBlueBg,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("START", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text(formatClockTime(startMinutes), color = DarkBlue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        Surface(
-                            color = LightBlueBg,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("FINISH", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text(formatClockTime(endMinutes), color = DarkBlue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
                     Text("START TIME", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1002,7 +1012,26 @@ fun EditEventDialog(
             onDismissRequest = { showDatePicker = false },
             title = { Text("Select Date", color = DarkBlue, fontWeight = FontWeight.Bold) },
             text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(month, parsedYear) {
+                            var totalDrag = 0f
+                            detectHorizontalDragGestures(
+                                onDragEnd = { totalDrag = 0f },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    totalDrag += dragAmount
+                                    if (totalDrag > 80f) {
+                                        moveEditMonth(-1)
+                                        totalDrag = 0f
+                                    } else if (totalDrag < -80f) {
+                                        moveEditMonth(1)
+                                        totalDrag = 0f
+                                    }
+                                }
+                            )
+                        }
+                ) {
                     Text("$day ${month.take(3)} $parsedYear", color = DarkBlue, fontSize = 38.sp, fontWeight = FontWeight.Light)
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(
@@ -1012,26 +1041,10 @@ fun EditEventDialog(
                     ) {
                         Text("$month $parsedYear", color = DarkBlue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Row {
-                            IconButton(onClick = {
-                                val currentIndex = months.indexOf(month)
-                                if (currentIndex == 0) {
-                                    month = "December"
-                                    year = (parsedYear - 1).toString()
-                                } else {
-                                    month = months[currentIndex - 1]
-                                }
-                            }) {
+                            IconButton(onClick = { moveEditMonth(-1) }) {
                                 Text("<", color = DarkBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                             }
-                            IconButton(onClick = {
-                                val currentIndex = months.indexOf(month)
-                                if (currentIndex == months.lastIndex) {
-                                    month = "January"
-                                    year = (parsedYear + 1).toString()
-                                } else {
-                                    month = months[currentIndex + 1]
-                                }
-                            }) {
+                            IconButton(onClick = { moveEditMonth(1) }) {
                                 Text(">", color = DarkBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                             }
                         }
@@ -1043,7 +1056,8 @@ fun EditEventDialog(
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    (1..maxDay).toList().chunked(7).forEach { rowDays ->
+                    val calendarCells = List(firstDayOffset(month, parsedYear)) { null } + (1..maxDay).map { it }
+                    calendarCells.chunked(7).forEach { rowDays ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
@@ -1053,20 +1067,25 @@ fun EditEventDialog(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .background(if (day == dayNum) DarkBlue else Color.Transparent)
+                                        .background(if (dayNum != null && day == dayNum) DarkBlue else Color.Transparent)
                                         .clickable {
-                                            day = dayNum
+                                            if (dayNum != null) {
+                                                day = dayNum
+                                            }
                                         }
                                         .padding(4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = dayNum.toString(),
-                                        color = if (day == dayNum) Color.White else DarkBlue,
+                                        text = dayNum?.toString().orEmpty(),
+                                        color = if (dayNum != null && day == dayNum) Color.White else DarkBlue,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
                                 }
+                            }
+                            repeat(7 - rowDays.size) {
+                                Spacer(modifier = Modifier.size(36.dp))
                             }
                         }
                         Spacer(modifier = Modifier.height(6.dp))
@@ -1119,7 +1138,7 @@ fun FilePreviewDialog(
                     .padding(vertical = 8.dp)
             ) {
                 when {
-                    fileName.contains("BoardingPass.pdf", ignoreCase = true) -> {
+                    supportsTextPreview(fileName) && fileName.contains("BoardingPass.pdf", ignoreCase = true) -> {
                         // High-fidelity Boarding Pass preview!
                         Box(
                             modifier = Modifier
@@ -1193,7 +1212,7 @@ fun FilePreviewDialog(
                             }
                         }
                     }
-                    fileName.contains("MeetingAgenda.pdf", ignoreCase = true) -> {
+                    supportsTextPreview(fileName) && fileName.contains("MeetingAgenda.pdf", ignoreCase = true) -> {
                         // High-fidelity Meeting Agenda preview!
                         Column(
                             modifier = Modifier
@@ -1220,7 +1239,7 @@ fun FilePreviewDialog(
                             }
                         }
                     }
-                    fileName.contains("SprintBacklog.xlsx", ignoreCase = true) -> {
+                    supportsTextPreview(fileName) && fileName.contains("SprintBacklog.xlsx", ignoreCase = true) -> {
                         // High-fidelity Spreadsheet preview!
                         Column(
                             modifier = Modifier
@@ -1273,7 +1292,7 @@ fun FilePreviewDialog(
                         }
                     }
                     else -> {
-                        // Standard document details view
+                        // Text preview only; binary documents must be opened externally.
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1282,15 +1301,24 @@ fun FilePreviewDialog(
                                 .padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("📁 Document Viewer Simulation", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Simulating file decryption...", color = TextGray, fontSize = 12.sp)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            LinearProgressIndicator(
-                                modifier = Modifier.fillMaxWidth().height(4.dp),
-                                color = DarkBlue,
-                                trackColor = Color.LightGray
-                            )
+                            if (supportsTextPreview(fileName)) {
+                                Text("Text Preview", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Preview content for $fileName\n\nOpen the file to view the original document.",
+                                    color = TextGray,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                Text("Preview not supported", color = DarkBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "This file type can be opened with an external app if one is installed.",
+                                    color = TextGray,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
@@ -1304,7 +1332,7 @@ fun FilePreviewDialog(
         dismissButton = {
             Button(
                 onClick = {
-                    Toast.makeText(context, "Opening document in local storage...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Opening attached file...", Toast.LENGTH_SHORT).show()
                     try {
                         // 1. Create a dummy physical file inside context.cacheDir
                         val file = java.io.File(context.cacheDir, fileName)
@@ -1327,7 +1355,7 @@ fun FilePreviewDialog(
                                 setDataAndType(fileUri, mimeType)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            context.startActivity(intent)
+                            context.startActivity(Intent.createChooser(intent, "Open attached file"))
                         } catch (e1: Exception) {
                             // Fallback: try opening as text/plain so even empty emulators can preview the mock file content!
                             try {
@@ -1335,7 +1363,7 @@ fun FilePreviewDialog(
                                     setDataAndType(fileUri, "text/plain")
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(fallbackIntent)
+                                context.startActivity(Intent.createChooser(fallbackIntent, "Open attached file"))
                             } catch (e2: Exception) {
                                 // Double Fallback: Show location to user directly
                                 Toast.makeText(
@@ -1352,7 +1380,7 @@ fun FilePreviewDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Apri File", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Open File", color = Color.White, fontWeight = FontWeight.Bold)
             }
         },
         containerColor = Color.White,
@@ -1364,8 +1392,22 @@ fun getMimeType(fileName: String): String {
     return when {
         fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
         fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
         fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
         fileName.endsWith(".pptx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        else -> "text/plain"
+        fileName.endsWith(".ppt", ignoreCase = true) -> "application/vnd.ms-powerpoint"
+        fileName.endsWith(".txt", ignoreCase = true) -> "text/plain"
+        fileName.endsWith(".md", ignoreCase = true) -> "text/markdown"
+        fileName.endsWith(".csv", ignoreCase = true) -> "text/csv"
+        fileName.endsWith(".json", ignoreCase = true) -> "application/json"
+        fileName.endsWith(".xml", ignoreCase = true) -> "application/xml"
+        fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+        fileName.endsWith(".jpg", ignoreCase = true) || fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+        fileName.endsWith(".gif", ignoreCase = true) -> "image/gif"
+        fileName.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
+        fileName.endsWith(".mp3", ignoreCase = true) -> "audio/mpeg"
+        fileName.endsWith(".zip", ignoreCase = true) -> "application/zip"
+        else -> "*/*"
     }
 }

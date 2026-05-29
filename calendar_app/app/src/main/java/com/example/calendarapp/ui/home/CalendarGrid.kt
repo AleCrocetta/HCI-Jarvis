@@ -138,7 +138,7 @@ fun CalendarGrid(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(320.dp) // Height increased to fully fit all 6 rows!
+                .height(260.dp)
         ) { page ->
             val pageYear = page / 12
             val pageMonthName = monthsList[page % 12]
@@ -204,16 +204,12 @@ fun CalendarMonthGrid(
     }
 
     val currentMonthIndex = monthsList.indexOf(selectedMonth)
-    val nextMonthName = monthsList[(currentMonthIndex + 1) % 12]
-    val nextMonthYear = if (selectedMonth == "December") selectedYear + 1 else selectedYear
     val prevMonthName = monthsList[if (currentMonthIndex == 0) 11 else currentMonthIndex - 1]
     val prevMonthYear = if (selectedMonth == "January") selectedYear - 1 else selectedYear
 
     var currentDay = 1
-    var nextMonthDay = 1
     
-    // Always render exactly 6 rows to lock the grid height perfectly!
-    val numRows = 6 
+    val numRows = kotlin.math.ceil((startDayOffset + daysInMonth) / 7f).toInt()
 
     Column(modifier = Modifier.fillMaxWidth()) {
         for (row in 0 until numRows) {
@@ -284,19 +280,7 @@ fun CalendarMonthGrid(
                             )
                             currentDay++
                         } else {
-                            val dayNum = nextMonthDay
-                            CalendarCell(
-                                day = dayNum.toString(),
-                                isSelected = false,
-                                bgColor = Color.Transparent,
-                                textColor = Color(0xFFBDBDBD),
-                                isPast = true,
-                                onClick = {
-                                    onNextMonth()
-                                    onDaySelected(dayNum, nextMonthName, nextMonthYear)
-                                }
-                            )
-                            nextMonthDay++
+                            Spacer(modifier = Modifier.size(42.dp))
                         }
                     }
                 }
@@ -334,12 +318,12 @@ fun CalendarCell(
     }
 
     Box(
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(42.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(32.dp)
                 .clip(CircleShape)
                 .background(actualBgColor)
                 .then(borderModifier)
@@ -350,7 +334,7 @@ fun CalendarCell(
                 text = day,
                 color = actualTextColor,
                 fontWeight = if (isToday || isSelected || !isPast) FontWeight.Bold else FontWeight.Normal,
-                fontSize = 14.sp
+                fontSize = 13.sp
             )
         }
     }
