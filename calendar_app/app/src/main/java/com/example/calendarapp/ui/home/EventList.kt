@@ -1,5 +1,6 @@
 package com.example.calendarapp.ui.home
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +52,7 @@ import com.example.calendarapp.ui.theme.LightBlueBg
 import com.example.calendarapp.ui.theme.LightGrayBg
 import com.example.calendarapp.ui.theme.TextGray
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 private fun priorityColor(priority: String): Color {
     return when (priority.lowercase()) {
@@ -126,6 +129,13 @@ private fun formatTimeRange(startMinutes: Int, endMinutes: Int): String {
     return "${formatClockTime(startMinutes)} - ${formatClockTime(endMinutes)}"
 }
 
+private fun normalizeWebUri(link: String): Uri? {
+    val trimmed = link.trim()
+    if (trimmed.isBlank()) return null
+    val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
+    return runCatching { Uri.parse(withScheme) }.getOrNull()
+}
+
 private fun getEventFileNameFromUri(context: android.content.Context, uri: Uri): String {
     var result: String? = null
     if (uri.scheme == "content") {
@@ -193,22 +203,37 @@ private fun TimeWheelColumn(
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 6.dp)
         ) {
-            values.forEach { value ->
+            values.forEachIndexed { index, value ->
                 val selected = value == selectedValue
+                val selectedIndex = values.indexOf(selectedValue).coerceAtLeast(0)
+                val distance = abs(index - selectedIndex).coerceAtMost(3)
+                val rotation = when {
+                    index < selectedIndex -> 18f
+                    index > selectedIndex -> -18f
+                    else -> 0f
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) Color(0xFFAFC2FF) else Color.Transparent)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                         .clickable { onValueSelected(value) }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 10.dp)
+                        .graphicsLayer {
+                            rotationX = rotation
+                            cameraDistance = 10f * density
+                            alpha = when (distance) {
+                                0 -> 1f
+                                1 -> 0.78f
+                                2 -> 0.56f
+                                else -> 0.38f
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "%02d".format(value),
                         color = DarkBlue,
-                        fontSize = 18.sp,
+                        fontSize = if (selected) 22.sp else 18.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
                 }
@@ -619,8 +644,14 @@ fun EventCard(
                                 .clickable {
                                     Toast.makeText(context, "Opening in Web Browser...", Toast.LENGTH_SHORT).show()
                                     try {
-                                        // Standard real-life Android Intent to open URL!
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(event.link))
+                                        val uri = normalizeWebUri(event.link.orEmpty())
+                                        if (uri == null) {
+                                            Toast.makeText(context, "Invalid link", Toast.LENGTH_SHORT).show()
+                                            return@clickable
+                                        }
+                                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                            addCategory(Intent.CATEGORY_BROWSABLE)
+                                        }
                                         context.startActivity(intent)
                                     } catch (e: Exception) {
                                         Toast.makeText(context, "Unable to launch browser: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
@@ -1347,30 +1378,24 @@ fun FilePreviewDialog(
                 onClick = {
                     Toast.makeText(context, "Opening attached file...", Toast.LENGTH_SHORT).show()
                     try {
-                        val mimeType = getMimeType(fileName)
-                        val openUri = fileUri?.let { Uri.parse(it) } ?: run {
-                            val file = java.io.File(context.cacheDir, fileName)
-                            file.writeText(
-                                "This is the mock physical content of the shared document: $fileName.\n\n" +
-                                "Under real-world usage, this contains the decrypted secure binary document stream."
-                            )
-                            androidx.core.content.FileProvider.getUriForFile(
-                                context,
-                                "com.example.calendarapp.fileprovider",
-                                file
-                            )
+                        val openUri = fileUri?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+                        if (openUri == null) {
+                            Toast.makeText(context, "File reference missing. Please reattach this file.", Toast.LENGTH_LONG).show()
+                            return@Button
                         }
+                        val mimeType = context.contentResolver.getType(openUri) ?: getMimeType(fileName)
                         try {
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(openUri, mimeType)
+                                clipData = ClipData.newUri(context.contentResolver, fileName, openUri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(Intent.createChooser(intent, "Open attached file"))
                         } catch (e1: Exception) {
-                            // Fallback: try opening as text/plain so even empty emulators can preview the mock file content!
                             try {
                                 val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(openUri, "text/plain")
+                                    setDataAndType(openUri, "*/*")
+                                    clipData = ClipData.newUri(context.contentResolver, fileName, openUri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(Intent.createChooser(fallbackIntent, "Open attached file"))
