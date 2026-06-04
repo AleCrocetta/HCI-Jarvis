@@ -45,9 +45,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 
-private data class MemoryPool(
-    val label: String,
-    val placeholder: String
+private data class MemoryEntry(
+    val id: Int,
+    val name: String,
+    val value: String
 )
 
 @Composable
@@ -468,81 +469,32 @@ fun HomeScreen(
 
     // Memory & Preferences Area Dialog
     if (showMemoryDialog) {
-        val memoryPools = listOf(
-            MemoryPool(
-                "Sports routine",
-                "Gym Mon/Wed 8 AM, football Friday..."
-            ),
-            MemoryPool(
-                "Daily study time",
-                "2 hours, usually after lunch..."
-            ),
-            MemoryPool(
-                "Sleeping habits",
-                "Sleep 11:30 PM - 7:30 AM..."
-            ),
-            MemoryPool(
-                "Meal habits",
-                "Lunch around 1 PM, dinner around 8 PM..."
-            ),
-            MemoryPool(
-                "Commute / travel time",
-                "30 minutes to university..."
-            ),
-            MemoryPool(
-                "Work or class schedule",
-                "Classes Monday to Thursday mornings..."
-            ),
-            MemoryPool(
-                "Break preferences",
-                "10 minute breaks every hour..."
-            ),
-            MemoryPool(
-                "Planning style",
-                "Balanced, morning focus, avoid evenings..."
-            ),
-            MemoryPool(
-                "Task difficulty preference",
-                "Harder tasks in the morning, lighter tasks after lunch..."
-            ),
-            MemoryPool(
-                "Extra notes",
-                "Focus hours, rest days, personal habits..."
-            )
-        )
-
-        fun memoryValue(label: String): String {
-            val prefix = "$label:"
-            return userPreferences.firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-                ?.substringAfter(":")
-                ?.trim()
-                ?.takeIf { it != "Not specified" }
-                .orEmpty()
-        }
-
-        val knownMemoryLabels = memoryPools.map { it.label }
-        fun unknownMemoryNotes(): String {
-            return userPreferences.filter { preference ->
-                knownMemoryLabels.none { label -> preference.startsWith("$label:", ignoreCase = true) }
-            }.joinToString("\n")
-        }
-
-        val memoryAnswers = remember(userPreferences) {
-            mutableStateMapOf<String, String>().apply {
-                memoryPools.forEach { pool ->
-                    this[pool.label] = if (pool.label == "Extra notes") {
-                        listOf(memoryValue(pool.label), unknownMemoryNotes())
-                            .filter { it.isNotBlank() }
-                            .joinToString("\n")
-                    } else {
-                        memoryValue(pool.label)
+        val memoryEntries = remember(userPreferences) {
+            mutableStateListOf<MemoryEntry>().apply {
+                userPreferences.forEachIndexed { index, preference ->
+                    val hasName = preference.contains(":")
+                    val name = if (hasName) preference.substringBefore(":").trim() else "Memory ${index + 1}"
+                    val value = if (hasName) preference.substringAfter(":").trim() else preference.trim()
+                    if (value.isNotBlank() && !value.equals("Not specified", ignoreCase = true)) {
+                        add(MemoryEntry(index, name.ifBlank { "Memory ${index + 1}" }, value))
                     }
                 }
             }
         }
+        var expandedMemoryPool by remember(userPreferences) {
+            mutableStateOf(memoryEntries.firstOrNull()?.id)
+        }
 
-        fun memoryLine(label: String, value: String): String {
-            return "$label: ${value.ifBlank { "Not specified" }}"
+        fun memoryFolder(entry: MemoryEntry): String {
+            val text = "${entry.name} ${entry.value}".lowercase()
+            return when {
+                Regex("""\b(football|gym|sport|training|run|running|yoga|basket|tennis|swim)\b""").containsMatchIn(text) -> "Sport"
+                Regex("""\b(study|exam|homework|lesson|revision)\b""").containsMatchIn(text) -> "Study"
+                Regex("""\b(work|class|course|lecture|meeting|job|shift)\b""").containsMatchIn(text) -> "Work / Classes"
+                Regex("""\b(hard|harder|difficult|morning|afternoon|planning|preference)\b""").containsMatchIn(text) -> "Preferences"
+                Regex("""\b(sleep|wake|lunch|dinner|breakfast|meal|commute|travel|break|rest)\b""").containsMatchIn(text) -> "Daily Life"
+                else -> "Other"
+            }
         }
 
         AlertDialog(
@@ -580,7 +532,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "Memory pools sync with Jarvis input and load regular routines into the calendar.",
+                            text = "Saved memory fields are grouped automatically and sync regular routines into the calendar.",
                             color = DarkBlue,
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
@@ -588,41 +540,125 @@ fun HomeScreen(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    memoryPools.forEach { pool ->
+                    if (memoryEntries.isEmpty()) {
                         Surface(
                             color = LightGrayBg,
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            Text(
+                                text = "No saved memory yet. Add a regular task or preference from the Jarvis bar.",
+                                color = TextGray,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp)
+                            )
+                        }
+                    }
+
+                    memoryEntries.groupBy { memoryFolder(it) }.forEach { (folder, entries) ->
+                        Text(
+                            text = folder,
+                            color = DarkBlue,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
+                        )
+                        entries.forEach { entry ->
+                        val index = memoryEntries.indexOfFirst { it.id == entry.id }
+                        if (index != -1) {
+                        val isExpanded = expandedMemoryPool == entry.id
+                        Surface(
+                            color = LightGrayBg,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    expandedMemoryPool = if (isExpanded) null else entry.id
+                                }
+                        ) {
                             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                                Text(
-                                    text = pool.label,
-                                    color = DarkBlue,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedTextField(
-                                    value = memoryAnswers[pool.label].orEmpty(),
-                                    onValueChange = { memoryAnswers[pool.label] = it },
-                                    placeholder = { Text(pool.placeholder, color = TextGray) },
+                                Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    minLines = if (pool.label == "Extra notes") 2 else 1,
-                                    singleLine = pool.label != "Extra notes",
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = DarkBlue.copy(alpha = 0.45f),
-                                        unfocusedBorderColor = Color.Transparent,
-                                        focusedContainerColor = White,
-                                        unfocusedContainerColor = White
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = entry.name,
+                                            color = DarkBlue,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = entry.value.ifBlank { "No saved instruction" },
+                                            color = TextGray,
+                                            fontSize = 11.sp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Text(
+                                        text = if (isExpanded) "Hide" else "Edit",
+                                        color = DarkBlue,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Delete",
+                                        color = Color(0xFFD32F2F),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clickable {
+                                                memoryEntries.removeAt(index)
+                                                if (expandedMemoryPool == entry.id) {
+                                                    expandedMemoryPool = null
+                                                }
+                                            }
+                                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                                    )
+                                }
+                                if (isExpanded) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    OutlinedTextField(
+                                        value = entry.name,
+                                        onValueChange = { memoryEntries[index] = entry.copy(name = it) },
+                                        label = { Text("Name", color = TextGray) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = DarkBlue.copy(alpha = 0.45f),
+                                            unfocusedBorderColor = Color.Transparent,
+                                            focusedContainerColor = White,
+                                            unfocusedContainerColor = White
+                                        ),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = entry.value,
+                                        onValueChange = { memoryEntries[index] = entry.copy(value = it) },
+                                        label = { Text("Saved text", color = TextGray) },
+                                        placeholder = { Text("Routine or preference...", color = TextGray) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        minLines = 2,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = DarkBlue.copy(alpha = 0.45f),
+                                            unfocusedBorderColor = Color.Transparent,
+                                            focusedContainerColor = White,
+                                            unfocusedContainerColor = White
+                                        ),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
+                        }
+                        }
                     }
                 }
             },
@@ -630,9 +666,9 @@ fun HomeScreen(
                 Button(
                     onClick = {
                         onSavePreferences(
-                            memoryPools.map { pool ->
-                                memoryLine(pool.label, memoryAnswers[pool.label].orEmpty())
-                            }
+                            memoryEntries
+                                .filter { it.name.isNotBlank() && it.value.isNotBlank() }
+                                .map { "${it.name.trim()}: ${it.value.trim()}" }
                         )
                         showMemoryDialog = false
                     },

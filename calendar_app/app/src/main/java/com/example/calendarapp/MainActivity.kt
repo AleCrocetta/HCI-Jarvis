@@ -30,6 +30,7 @@ private data class MemoryRoutine(
     val value: String,
     val title: String,
     val weekdays: Set<Int>,
+    val repeatsDaily: Boolean,
     val startMinutes: Int,
     val endMinutes: Int
 )
@@ -210,9 +211,37 @@ class MainActivity : ComponentActivity() {
                         return hour * 60 + minute
                     }
 
+                    fun parseClock24Minutes(hourText: String, minuteText: String): Int? {
+                        val hour = hourText.toIntOrNull() ?: return null
+                        val minute = minuteText.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 0
+                        if (hour !in 0..23 || minute !in 0..59) return null
+                        return hour * 60 + minute
+                    }
+
+                    fun normalizedMemoryText(value: String): String {
+                        return value
+                            .replace(Regex("""\bfoot\s+ball\b""", RegexOption.IGNORE_CASE), "football")
+                            .replace(Regex("""\b(\d{1,2})\s+(\d{2})(?=\s*(?:AM|PM|am|pm|\bto\b|-))"""), "$1:$2")
+                            .replace(Regex("""\btutti\s+i\s+giorni\b""", RegexOption.IGNORE_CASE), "every day")
+                            .replace(Regex("""\bogni\s+giorno\b""", RegexOption.IGNORE_CASE), "every day")
+                            .replace(Regex("""\bgiornalmente\b""", RegexOption.IGNORE_CASE), "every day")
+                    }
+
+                    fun normalizedActivityKey(value: String): String {
+                        return normalizedMemoryText(value)
+                            .lowercase(Locale.US)
+                            .replace(Regex("""\b(i|usually|normally|do|have|play|go|to|the|at|on|every|and|from|regular|routine)\b"""), " ")
+                            .replace(Regex("""\bday|daily\b"""), " ")
+                            .replace(Regex("""\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b"""), " ")
+                            .replace(Regex("""\b\d{1,2}(?::\d{2})?\s*(am|pm)?\s*(-|to)?\s*\d{0,2}(?::\d{2})?\s*(am|pm)?\b"""), " ")
+                            .replace(Regex("""[^a-z0-9]+"""), " ")
+                            .trim()
+                    }
+
                     fun parseMemoryTimeRange(value: String): IntRange? {
+                        val normalizedValue = normalizedMemoryText(value)
                         val rangeMatch = Regex("""\b(?:from\s+)?(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\s*(?:-|to)\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b""", RegexOption.IGNORE_CASE)
-                            .find(value)
+                            .find(normalizedValue)
                         if (rangeMatch != null) {
                             val endMarker = rangeMatch.groupValues[6]
                             val startMarker = rangeMatch.groupValues[3].ifBlank { endMarker }
@@ -220,8 +249,20 @@ class MainActivity : ComponentActivity() {
                             val end = parseClockMinutes(rangeMatch.groupValues[4], rangeMatch.groupValues[5], endMarker) ?: return null
                             if (end > start) return start until end
                         }
-                        val singleMatch = Regex("""\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b""", RegexOption.IGNORE_CASE).find(value) ?: return null
-                        val start = parseClockMinutes(singleMatch.groupValues[1], singleMatch.groupValues[2], singleMatch.groupValues[3]) ?: return null
+                        val range24Match = Regex("""\b(?:from|dalle|da|alle)?\s*(\d{1,2})(?::(\d{2}))?\s*(?:-|to|alle|a)\s*(\d{1,2})(?::(\d{2}))\b""", RegexOption.IGNORE_CASE)
+                            .find(normalizedValue)
+                        if (range24Match != null) {
+                            val start = parseClock24Minutes(range24Match.groupValues[1], range24Match.groupValues[2]) ?: return null
+                            val end = parseClock24Minutes(range24Match.groupValues[3], range24Match.groupValues[4]) ?: return null
+                            if (end > start) return start until end
+                        }
+                        val singleMatch = Regex("""\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b""", RegexOption.IGNORE_CASE).find(normalizedValue)
+                        if (singleMatch != null) {
+                            val start = parseClockMinutes(singleMatch.groupValues[1], singleMatch.groupValues[2], singleMatch.groupValues[3]) ?: return null
+                            return start until (start + 60)
+                        }
+                        val single24Match = Regex("""\b(?:alle|at)\s*(\d{1,2})(?::(\d{2}))?\b""", RegexOption.IGNORE_CASE).find(normalizedValue) ?: return null
+                        val start = parseClock24Minutes(single24Match.groupValues[1], single24Match.groupValues[2]) ?: return null
                         return start until (start + 60)
                     }
 
@@ -234,13 +275,14 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun memoryEventTitle(label: String, value: String): String {
+                        val normalizedValue = normalizedMemoryText(value)
                         val dayPattern = Regex("""\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b""", RegexOption.IGNORE_CASE)
                         val timePattern = Regex("""\b\d{1,2}(?::\d{2})?\s*(AM|PM)?\s*(?:-|to)?\s*\d{0,2}(?::\d{2})?\s*(AM|PM)?\b""", RegexOption.IGNORE_CASE)
                         val stopIndex = listOfNotNull(
-                            dayPattern.find(value)?.range?.first,
-                            timePattern.find(value)?.range?.first
-                        ).minOrNull() ?: value.length
-                        val title = value.take(stopIndex)
+                            dayPattern.find(normalizedValue)?.range?.first,
+                            timePattern.find(normalizedValue)?.range?.first
+                        ).minOrNull() ?: normalizedValue.length
+                        val title = normalizedValue.take(stopIndex)
                             .replace(Regex("""\b(i|usually|normally|do|have|play|go|to|the|at|on|every|and|from)\b""", RegexOption.IGNORE_CASE), " ")
                             .replace(Regex("""\s+"""), " ")
                             .trim()
@@ -269,12 +311,13 @@ class MainActivity : ComponentActivity() {
                         )
                         return preferences.mapNotNull { preference ->
                             val label = preference.substringBefore(":").trim().ifBlank { "Memory setting" }
-                            val value = preference.substringAfter(":", preference).trim()
+                            val value = normalizedMemoryText(preference.substringAfter(":", preference).trim())
+                            val repeatsDaily = Regex("""\b(every\s+day|daily)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
                             val weekdays = weekdayMap.filterKeys { day ->
                                 Regex("""\b$day\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
                             }.values.toSet()
                             val range = parseMemoryTimeRange(value)
-                            if (weekdays.isEmpty() || range == null || value.equals("Not specified", ignoreCase = true)) {
+                            if ((!repeatsDaily && weekdays.isEmpty()) || range == null || value.equals("Not specified", ignoreCase = true)) {
                                 null
                             } else {
                                 MemoryRoutine(
@@ -282,6 +325,7 @@ class MainActivity : ComponentActivity() {
                                     value = value,
                                     title = memoryEventTitle(label, value),
                                     weekdays = weekdays,
+                                    repeatsDaily = repeatsDaily,
                                     startMinutes = range.first,
                                     endMinutes = range.last
                                 )
@@ -297,7 +341,12 @@ class MainActivity : ComponentActivity() {
                         return "memory:$key"
                     }
 
-                    fun memoryEventsForMonth(preferences: List<String>, month: String, year: Int): List<CalendarEvent> {
+                    fun memoryEventsForMonth(
+                        preferences: List<String>,
+                        month: String,
+                        year: Int,
+                        routines: List<MemoryRoutine> = parseMemoryRoutines(preferences)
+                    ): List<CalendarEvent> {
                         val monthIndex = monthsList.indexOf(month)
                         if (monthIndex == -1) return emptyList()
                         val monthCalendar = Calendar.getInstance().apply {
@@ -306,10 +355,10 @@ class MainActivity : ComponentActivity() {
                             set(Calendar.DAY_OF_MONTH, 1)
                         }
                         val daysInMonth = monthCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-                        return parseMemoryRoutines(preferences).flatMap { routine ->
+                        return routines.flatMap { routine ->
                             (1..daysInMonth).mapNotNull { day ->
                                 monthCalendar.set(Calendar.DAY_OF_MONTH, day)
-                                if (monthCalendar.get(Calendar.DAY_OF_WEEK) in routine.weekdays) {
+                                if (routine.repeatsDaily || monthCalendar.get(Calendar.DAY_OF_WEEK) in routine.weekdays) {
                                     CalendarEvent(
                                         id = memoryEventId(routine, month, year, day),
                                         day = day,
@@ -327,11 +376,24 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun memoryEventsForWindow(preferences: List<String>): List<CalendarEvent> {
-                        return activeMemoryWindow().flatMap { (month, year) -> memoryEventsForMonth(preferences, month, year) }
+                        val routines = parseMemoryRoutines(preferences)
+                        val activeEvents = activeMemoryWindow().flatMap { (month, year) ->
+                            memoryEventsForMonth(preferences, month, year, routines)
+                        }
+                        val dailyRoutines = routines.filter { it.repeatsDaily }
+                        val yearlyDailyEvents = if (dailyRoutines.isEmpty()) {
+                            emptyList()
+                        } else {
+                            monthsList.flatMap { month ->
+                                memoryEventsForMonth(preferences, month, selectedYear, dailyRoutines)
+                            }
+                        }
+                        return (activeEvents + yearlyDailyEvents).distinctBy { it.id }
                     }
 
                     fun removeOldUntaggedMemoryEvents(oldPreferences: List<String>) {
-                        val oldGenerated = activeMemoryWindow().flatMap { (month, year) -> memoryEventsForMonth(oldPreferences, month, year) }
+                        val loadedWindows = eventsList.map { it.month to it.year }.toSet() + activeMemoryWindow()
+                        val oldGenerated = loadedWindows.flatMap { (month, year) -> memoryEventsForMonth(oldPreferences, month, year) }
                         eventsList.removeAll { event ->
                             !event.id.startsWith("memory:") && oldGenerated.any { generated ->
                                 event.title == generated.title &&
@@ -348,9 +410,16 @@ class MainActivity : ComponentActivity() {
                         val activeWindow = activeMemoryWindow()
                         val generatedEvents = memoryEventsForWindow(preferences)
                         val generatedIds = generatedEvents.map { it.id }.toSet()
+                        val generatedWindow = generatedEvents.map { it.month to it.year }.toSet() + activeWindow
                         eventsList.removeAll { event ->
                             event.id.startsWith("memory:") &&
-                                ((event.month to event.year) !in activeWindow || event.id !in generatedIds)
+                                ((event.month to event.year) !in generatedWindow || event.id !in generatedIds || generatedEvents.none { generated ->
+                                    generated.title == event.title &&
+                                        generated.day == event.day &&
+                                        generated.month.equals(event.month, ignoreCase = true) &&
+                                        generated.year == event.year &&
+                                        generated.time == event.time
+                                })
                         }
                         generatedEvents.forEach { memoryEvent ->
                             val collision = eventsList.any { event ->
@@ -385,25 +454,27 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun memoryLabelForText(value: String): String {
+                        val normalizedValue = normalizedMemoryText(value)
                         return when {
-                            Regex("""\b(hard|harder|difficult|difficulty|demanding|heavy|complex|intense|morning|afternoon|evening)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Task difficulty preference"
-                            Regex("""\b(football|gym|sport|train|training|run|running|yoga|basket|tennis|swim)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Sports routine"
-                            Regex("""\b(study|exam|homework|revision|lesson)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Daily study time"
-                            Regex("""\b(class|course|lecture|university|school|work|job|shift|meeting)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Work or class schedule"
-                            Regex("""\b(sleep|wake|bed|bedtime)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Sleeping habits"
-                            Regex("""\b(lunch|dinner|breakfast|meal|eat)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Meal habits"
-                            Regex("""\b(commute|travel|bus|train|drive|metro)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Commute / travel time"
-                            Regex("""\b(break|pause|rest)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Break preferences"
-                            Regex("""\b(plan|planning|organize|schedule)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Planning style"
+                            Regex("""\b(hard|harder|difficult|difficulty|demanding|heavy|complex|intense|morning|afternoon|evening)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Task difficulty preference"
+                            Regex("""\b(football|gym|sport|train|training|run|running|yoga|basket|tennis|swim)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Sports routine"
+                            Regex("""\b(study|exam|homework|revision|lesson)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Daily study time"
+                            Regex("""\b(class|course|lecture|university|school|work|job|shift|meeting)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Work or class schedule"
+                            Regex("""\b(sleep|wake|bed|bedtime)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Sleeping habits"
+                            Regex("""\b(lunch|dinner|breakfast|meal|eat)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Meal habits"
+                            Regex("""\b(commute|travel|bus|train|drive|metro)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Commute / travel time"
+                            Regex("""\b(break|pause|rest)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Break preferences"
+                            Regex("""\b(plan|planning|organize|schedule)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalizedValue) -> "Planning style"
                             else -> "Extra notes"
                         }
                     }
 
                     fun detectRoutineFromPrompt(prompt: String): MemoryRoutine? {
+                        val normalizedPrompt = normalizedMemoryText(prompt)
                         val hasRoutineLanguage = Regex("""\b(remember|memory|routine|regular|weekly|usually|every|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|play|do|have|train|gym|football|study|class|work)\b""", RegexOption.IGNORE_CASE)
-                            .containsMatchIn(prompt)
+                            .containsMatchIn(normalizedPrompt)
                         if (!hasRoutineLanguage) return null
-                        return parseMemoryRoutines(listOf("${memoryLabelForText(prompt)}: $prompt")).firstOrNull()
+                        return parseMemoryRoutines(listOf("${memoryLabelForText(normalizedPrompt)}: $normalizedPrompt")).firstOrNull()
                     }
 
                     fun detectPreferenceFromPrompt(prompt: String): Pair<String, String>? {
@@ -416,14 +487,17 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun updatePreferencesWithRoutine(preferences: List<String>, routine: MemoryRoutine): List<String> {
-                        val targetLabel = memoryLabelForText(routine.value).takeIf { it != "Extra notes" } ?: routine.label
-                        val activityTitle = routine.title.lowercase(Locale.US)
+                        val targetLabel = routine.title.takeIf { it.isNotBlank() && it != "MEMORY SETTING" } ?: memoryLabelForText(routine.value)
+                        val activityKey = normalizedActivityKey(routine.value)
                         var replaced = false
                         val updated = preferences.map { preference ->
-                            val currentValue = preference.substringAfter(":", "").lowercase(Locale.US)
-                            val samePool = preference.startsWith("$targetLabel:", ignoreCase = true)
-                            val sameActivity = activityTitle.isNotBlank() && activityTitle in currentValue
-                            if (samePool && (sameActivity || parseMemoryRoutines(listOf(preference)).isEmpty())) {
+                            val currentValue = normalizedMemoryText(preference.substringAfter(":", ""))
+                            val currentKey = normalizedActivityKey(currentValue)
+                            val currentName = preference.substringBefore(":").trim()
+                            val sameName = currentName.equals(targetLabel, ignoreCase = true)
+                            val sameActivity = activityKey.isNotBlank() && currentKey.isNotBlank() &&
+                                (activityKey == currentKey || activityKey in currentKey || currentKey in activityKey)
+                            if (sameName || sameActivity) {
                                 replaced = true
                                 "$targetLabel: ${routine.value}"
                             } else {
