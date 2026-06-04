@@ -25,6 +25,24 @@ import com.example.calendarapp.ui.theme.CalendarAppTheme
 import java.util.Calendar
 import java.util.Locale
 
+private data class MemoryRoutine(
+    val label: String,
+    val value: String,
+    val title: String,
+    val weekdays: Set<Int>,
+    val startMinutes: Int,
+    val endMinutes: Int
+)
+
+private data class PendingMemoryCollision(
+    val routine: MemoryRoutine,
+    val preferences: List<String>,
+    val routineEvent: CalendarEvent,
+    val conflictingEvent: CalendarEvent,
+    val movedRoutineEvent: CalendarEvent?,
+    val movedExistingEvent: CalendarEvent?
+)
+
 class MainActivity : ComponentActivity() {
 
     private val speechRecognizerLauncher = registerForActivityResult(
@@ -148,13 +166,426 @@ class MainActivity : ComponentActivity() {
                             CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "DINNER MEETING", time = "07:30 PM - 09:00 PM")
                         )
                     }
+                    val monthsList = listOf(
+                        "January", "February", "March", "April", "May", "June",
+                        "July", "August", "September", "October", "November", "December"
+                    )
+                    var previousMemoryPreferences by remember { mutableStateOf(userPreferences.toList()) }
+                    var pendingMemoryCollision by remember { mutableStateOf<PendingMemoryCollision?>(null) }
+
+                    fun monthEpoch(month: String, year: Int): Int {
+                        return year * 12 + monthsList.indexOf(month).coerceAtLeast(0)
+                    }
+
+                    fun monthFromEpoch(epoch: Int): Pair<String, Int> {
+                        val monthIndex = ((epoch % 12) + 12) % 12
+                        val year = Math.floorDiv(epoch, 12)
+                        return monthsList[monthIndex] to year
+                    }
+
+                    fun activeMemoryWindow(): Set<Pair<String, Int>> {
+                        val center = monthEpoch(selectedMonth, selectedYear)
+                        return setOf(center - 1, center, center + 1).map { monthFromEpoch(it) }.toSet()
+                    }
+
+                    fun formatMemoryTime(totalMinutes: Int): String {
+                        val normalizedMinutes = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60)
+                        val hour24 = normalizedMinutes / 60
+                        val minute = normalizedMinutes % 60
+                        val marker = if (hour24 >= 12) "PM" else "AM"
+                        val hour12 = when (val hour = hour24 % 12) {
+                            0 -> 12
+                            else -> hour
+                        }
+                        return String.format(Locale.US, "%02d:%02d %s", hour12, minute, marker)
+                    }
+
+                    fun parseClockMinutes(hourText: String, minuteText: String, markerText: String): Int? {
+                        var hour = hourText.toIntOrNull() ?: return null
+                        val minute = minuteText.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 0
+                        val marker = markerText.uppercase(Locale.US)
+                        if (hour !in 1..12 || minute !in 0..59) return null
+                        if (marker == "PM" && hour != 12) hour += 12
+                        if (marker == "AM" && hour == 12) hour = 0
+                        return hour * 60 + minute
+                    }
+
+                    fun parseMemoryTimeRange(value: String): IntRange? {
+                        val rangeMatch = Regex("""\b(?:from\s+)?(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\s*(?:-|to)\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b""", RegexOption.IGNORE_CASE)
+                            .find(value)
+                        if (rangeMatch != null) {
+                            val endMarker = rangeMatch.groupValues[6]
+                            val startMarker = rangeMatch.groupValues[3].ifBlank { endMarker }
+                            val start = parseClockMinutes(rangeMatch.groupValues[1], rangeMatch.groupValues[2], startMarker) ?: return null
+                            val end = parseClockMinutes(rangeMatch.groupValues[4], rangeMatch.groupValues[5], endMarker) ?: return null
+                            if (end > start) return start until end
+                        }
+                        val singleMatch = Regex("""\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b""", RegexOption.IGNORE_CASE).find(value) ?: return null
+                        val start = parseClockMinutes(singleMatch.groupValues[1], singleMatch.groupValues[2], singleMatch.groupValues[3]) ?: return null
+                        return start until (start + 60)
+                    }
+
+                    fun parseEventTimeRange(time: String): IntRange? {
+                        return parseMemoryTimeRange(time)
+                    }
+
+                    fun rangesOverlap(first: IntRange, second: IntRange): Boolean {
+                        return first.first < second.last && second.first < first.last
+                    }
+
+                    fun memoryEventTitle(label: String, value: String): String {
+                        val dayPattern = Regex("""\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b""", RegexOption.IGNORE_CASE)
+                        val timePattern = Regex("""\b\d{1,2}(?::\d{2})?\s*(AM|PM)?\s*(?:-|to)?\s*\d{0,2}(?::\d{2})?\s*(AM|PM)?\b""", RegexOption.IGNORE_CASE)
+                        val stopIndex = listOfNotNull(
+                            dayPattern.find(value)?.range?.first,
+                            timePattern.find(value)?.range?.first
+                        ).minOrNull() ?: value.length
+                        val title = value.take(stopIndex)
+                            .replace(Regex("""\b(i|usually|normally|do|have|play|go|to|the|at|on|every|and|from)\b""", RegexOption.IGNORE_CASE), " ")
+                            .replace(Regex("""\s+"""), " ")
+                            .trim()
+                        return title.ifBlank { label }.uppercase(Locale.US)
+                    }
+
+                    fun parseMemoryRoutines(preferences: List<String>): List<MemoryRoutine> {
+                        val weekdayMap = mapOf(
+                            "sunday" to Calendar.SUNDAY,
+                            "sun" to Calendar.SUNDAY,
+                            "monday" to Calendar.MONDAY,
+                            "mon" to Calendar.MONDAY,
+                            "tuesday" to Calendar.TUESDAY,
+                            "tue" to Calendar.TUESDAY,
+                            "tues" to Calendar.TUESDAY,
+                            "wednesday" to Calendar.WEDNESDAY,
+                            "wed" to Calendar.WEDNESDAY,
+                            "thursday" to Calendar.THURSDAY,
+                            "thu" to Calendar.THURSDAY,
+                            "thur" to Calendar.THURSDAY,
+                            "thurs" to Calendar.THURSDAY,
+                            "friday" to Calendar.FRIDAY,
+                            "fri" to Calendar.FRIDAY,
+                            "saturday" to Calendar.SATURDAY,
+                            "sat" to Calendar.SATURDAY
+                        )
+                        return preferences.mapNotNull { preference ->
+                            val label = preference.substringBefore(":").trim().ifBlank { "Memory setting" }
+                            val value = preference.substringAfter(":", preference).trim()
+                            val weekdays = weekdayMap.filterKeys { day ->
+                                Regex("""\b$day\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
+                            }.values.toSet()
+                            val range = parseMemoryTimeRange(value)
+                            if (weekdays.isEmpty() || range == null || value.equals("Not specified", ignoreCase = true)) {
+                                null
+                            } else {
+                                MemoryRoutine(
+                                    label = label,
+                                    value = value,
+                                    title = memoryEventTitle(label, value),
+                                    weekdays = weekdays,
+                                    startMinutes = range.first,
+                                    endMinutes = range.last
+                                )
+                            }
+                        }
+                    }
+
+                    fun memoryEventId(routine: MemoryRoutine, month: String, year: Int, day: Int, startMinutes: Int = routine.startMinutes): String {
+                        val key = "${routine.label}:${routine.title}:$year:$month:$day:$startMinutes"
+                            .lowercase(Locale.US)
+                            .replace(Regex("""[^a-z0-9]+"""), "-")
+                            .trim('-')
+                        return "memory:$key"
+                    }
+
+                    fun memoryEventsForMonth(preferences: List<String>, month: String, year: Int): List<CalendarEvent> {
+                        val monthIndex = monthsList.indexOf(month)
+                        if (monthIndex == -1) return emptyList()
+                        val monthCalendar = Calendar.getInstance().apply {
+                            set(Calendar.YEAR, year)
+                            set(Calendar.MONTH, monthIndex)
+                            set(Calendar.DAY_OF_MONTH, 1)
+                        }
+                        val daysInMonth = monthCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                        return parseMemoryRoutines(preferences).flatMap { routine ->
+                            (1..daysInMonth).mapNotNull { day ->
+                                monthCalendar.set(Calendar.DAY_OF_MONTH, day)
+                                if (monthCalendar.get(Calendar.DAY_OF_WEEK) in routine.weekdays) {
+                                    CalendarEvent(
+                                        id = memoryEventId(routine, month, year, day),
+                                        day = day,
+                                        month = month,
+                                        year = year,
+                                        title = routine.title,
+                                        time = "${formatMemoryTime(routine.startMinutes)} - ${formatMemoryTime(routine.endMinutes)}",
+                                        priority = "Low"
+                                    )
+                                } else {
+                                    null
+                                }
+                            }
+                        }
+                    }
+
+                    fun memoryEventsForWindow(preferences: List<String>): List<CalendarEvent> {
+                        return activeMemoryWindow().flatMap { (month, year) -> memoryEventsForMonth(preferences, month, year) }
+                    }
+
+                    fun removeOldUntaggedMemoryEvents(oldPreferences: List<String>) {
+                        val oldGenerated = activeMemoryWindow().flatMap { (month, year) -> memoryEventsForMonth(oldPreferences, month, year) }
+                        eventsList.removeAll { event ->
+                            !event.id.startsWith("memory:") && oldGenerated.any { generated ->
+                                event.title == generated.title &&
+                                    event.time == generated.time &&
+                                    event.day == generated.day &&
+                                    event.month.equals(generated.month, ignoreCase = true) &&
+                                    event.year == generated.year
+                            }
+                        }
+                    }
+
+                    fun refreshMemoryEvents(preferences: List<String>, cleanupOldPreferences: List<String>? = null) {
+                        cleanupOldPreferences?.let { removeOldUntaggedMemoryEvents(it) }
+                        val activeWindow = activeMemoryWindow()
+                        val generatedEvents = memoryEventsForWindow(preferences)
+                        val generatedIds = generatedEvents.map { it.id }.toSet()
+                        eventsList.removeAll { event ->
+                            event.id.startsWith("memory:") &&
+                                ((event.month to event.year) !in activeWindow || event.id !in generatedIds)
+                        }
+                        generatedEvents.forEach { memoryEvent ->
+                            val collision = eventsList.any { event ->
+                                !event.id.startsWith("memory:") &&
+                                    event.day == memoryEvent.day &&
+                                    event.month.equals(memoryEvent.month, ignoreCase = true) &&
+                                    event.year == memoryEvent.year &&
+                                    parseEventTimeRange(event.time)?.let { existingRange ->
+                                        parseEventTimeRange(memoryEvent.time)?.let { memoryRange -> rangesOverlap(memoryRange, existingRange) }
+                                    } == true
+                            }
+                            if (!collision && eventsList.none { it.id == memoryEvent.id }) {
+                                eventsList.add(memoryEvent)
+                            }
+                        }
+                    }
+
+                    fun findBestOpenSlot(day: Int, month: String, year: Int, duration: Int, preferredStart: Int, ignoreEventId: String? = null): Int? {
+                        val occupied = eventsList.filter { event ->
+                            event.id != ignoreEventId &&
+                                event.day == day &&
+                                event.month.equals(month, ignoreCase = true) &&
+                                event.year == year
+                        }.mapNotNull { parseEventTimeRange(it.time) }
+                        val dayStart = 7 * 60
+                        val dayEnd = 23 * 60
+                        return generateSequence(0) { it + 15 }
+                            .takeWhile { dayStart + it + duration <= dayEnd }
+                            .map { dayStart + it }
+                            .filter { start -> occupied.none { rangesOverlap(start until (start + duration), it) } }
+                            .minByOrNull { kotlin.math.abs(it - preferredStart) }
+                    }
+
+                    fun memoryLabelForText(value: String): String {
+                        return when {
+                            Regex("""\b(hard|harder|difficult|difficulty|demanding|heavy|complex|intense|morning|afternoon|evening)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Task difficulty preference"
+                            Regex("""\b(football|gym|sport|train|training|run|running|yoga|basket|tennis|swim)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Sports routine"
+                            Regex("""\b(study|exam|homework|revision|lesson)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Daily study time"
+                            Regex("""\b(class|course|lecture|university|school|work|job|shift|meeting)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Work or class schedule"
+                            Regex("""\b(sleep|wake|bed|bedtime)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Sleeping habits"
+                            Regex("""\b(lunch|dinner|breakfast|meal|eat)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Meal habits"
+                            Regex("""\b(commute|travel|bus|train|drive|metro)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Commute / travel time"
+                            Regex("""\b(break|pause|rest)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Break preferences"
+                            Regex("""\b(plan|planning|organize|schedule)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value) -> "Planning style"
+                            else -> "Extra notes"
+                        }
+                    }
+
+                    fun detectRoutineFromPrompt(prompt: String): MemoryRoutine? {
+                        val hasRoutineLanguage = Regex("""\b(remember|memory|routine|regular|weekly|usually|every|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|play|do|have|train|gym|football|study|class|work)\b""", RegexOption.IGNORE_CASE)
+                            .containsMatchIn(prompt)
+                        if (!hasRoutineLanguage) return null
+                        return parseMemoryRoutines(listOf("${memoryLabelForText(prompt)}: $prompt")).firstOrNull()
+                    }
+
+                    fun detectPreferenceFromPrompt(prompt: String): Pair<String, String>? {
+                        val isPlanningPreference = Regex("""\b(prefer|preference|like|hard|harder|difficult|difficulty|demanding|heavy|complex|intense|morning|afternoon|evening|night)\b""", RegexOption.IGNORE_CASE)
+                            .containsMatchIn(prompt)
+                        if (!isPlanningPreference) return null
+                        val label = memoryLabelForText(prompt)
+                        if (label == "Extra notes") return null
+                        return label to prompt.trim()
+                    }
+
+                    fun updatePreferencesWithRoutine(preferences: List<String>, routine: MemoryRoutine): List<String> {
+                        val targetLabel = memoryLabelForText(routine.value).takeIf { it != "Extra notes" } ?: routine.label
+                        val activityTitle = routine.title.lowercase(Locale.US)
+                        var replaced = false
+                        val updated = preferences.map { preference ->
+                            val currentValue = preference.substringAfter(":", "").lowercase(Locale.US)
+                            val samePool = preference.startsWith("$targetLabel:", ignoreCase = true)
+                            val sameActivity = activityTitle.isNotBlank() && activityTitle in currentValue
+                            if (samePool && (sameActivity || parseMemoryRoutines(listOf(preference)).isEmpty())) {
+                                replaced = true
+                                "$targetLabel: ${routine.value}"
+                            } else {
+                                preference
+                            }
+                        }
+                        return if (replaced) updated else updated + "$targetLabel: ${routine.value}"
+                    }
+
+                    fun updatePreferencesWithMemoryValue(preferences: List<String>, label: String, value: String): List<String> {
+                        var replaced = false
+                        val updated = preferences.map { preference ->
+                            if (preference.startsWith("$label:", ignoreCase = true)) {
+                                replaced = true
+                                "$label: $value"
+                            } else {
+                                preference
+                            }
+                        }
+                        return if (replaced) updated else updated + "$label: $value"
+                    }
 
                     val deletedEventIndices = remember { mutableStateMapOf<String, Int>() }
 
                     val jarvisViewModel: com.example.calendarapp.ui.JarvisViewModel = viewModel()
                     val chatHistory by jarvisViewModel.chatHistory.collectAsState(initial = emptyList())
 
-                    onSpeechRecognized = { text ->
+                    fun weekdayNames(weekdays: Set<Int>): String {
+                        val names = listOf(
+                            Calendar.MONDAY to "Monday",
+                            Calendar.TUESDAY to "Tuesday",
+                            Calendar.WEDNESDAY to "Wednesday",
+                            Calendar.THURSDAY to "Thursday",
+                            Calendar.FRIDAY to "Friday",
+                            Calendar.SATURDAY to "Saturday",
+                            Calendar.SUNDAY to "Sunday"
+                        )
+                        return names.filter { it.first in weekdays }.joinToString(" and ") { it.second }
+                    }
+
+                    fun movedRoutinePreference(routine: MemoryRoutine, startMinutes: Int): MemoryRoutine {
+                        val duration = routine.endMinutes - routine.startMinutes
+                        val value = "${routine.title.lowercase(Locale.US)} ${weekdayNames(routine.weekdays)} from ${formatMemoryTime(startMinutes)} to ${formatMemoryTime(startMinutes + duration)}"
+                        return routine.copy(value = value, startMinutes = startMinutes, endMinutes = startMinutes + duration)
+                    }
+
+                    fun applyPreferences(preferences: List<String>) {
+                        val oldPreferences = previousMemoryPreferences
+                        userPreferences.clear()
+                        userPreferences.addAll(preferences)
+                        saveUserPreferences()
+                        refreshMemoryEvents(preferences, cleanupOldPreferences = oldPreferences)
+                        previousMemoryPreferences = preferences
+                    }
+
+                    fun firstRoutineCollision(routine: MemoryRoutine, preferences: List<String>): PendingMemoryCollision? {
+                        val routineEvent = memoryEventsForWindow(preferences).firstOrNull { event ->
+                            parseEventTimeRange(event.time)?.let { routineRange ->
+                                eventsList.any { existing ->
+                                    !existing.id.startsWith("memory:") &&
+                                        existing.day == event.day &&
+                                        existing.month.equals(event.month, ignoreCase = true) &&
+                                        existing.year == event.year &&
+                                        parseEventTimeRange(existing.time)?.let { existingRange -> rangesOverlap(routineRange, existingRange) } == true
+                                }
+                            } == true
+                        } ?: return null
+                        val conflict = eventsList.first { existing ->
+                            !existing.id.startsWith("memory:") &&
+                                existing.day == routineEvent.day &&
+                                existing.month.equals(routineEvent.month, ignoreCase = true) &&
+                                existing.year == routineEvent.year &&
+                                parseEventTimeRange(existing.time)?.let { existingRange ->
+                                    parseEventTimeRange(routineEvent.time)?.let { routineRange -> rangesOverlap(routineRange, existingRange) }
+                                } == true
+                        }
+                        val duration = routine.endMinutes - routine.startMinutes
+                        val movedRoutineStart = findBestOpenSlot(routineEvent.day, routineEvent.month, routineEvent.year, duration, routine.startMinutes)
+                        val movedExistingStart = parseEventTimeRange(conflict.time)?.let { existingRange ->
+                            findBestOpenSlot(conflict.day, conflict.month, conflict.year, existingRange.last - existingRange.first, existingRange.first, ignoreEventId = conflict.id)
+                        }
+                        return PendingMemoryCollision(
+                            routine = routine,
+                            preferences = preferences,
+                            routineEvent = routineEvent,
+                            conflictingEvent = conflict,
+                            movedRoutineEvent = movedRoutineStart?.let { routineEvent.copy(time = "${formatMemoryTime(it)} - ${formatMemoryTime(it + duration)}") },
+                            movedExistingEvent = movedExistingStart?.let {
+                                val existingRange = parseEventTimeRange(conflict.time) ?: return@let null
+                                conflict.copy(time = "${formatMemoryTime(it)} - ${formatMemoryTime(it + existingRange.last - existingRange.first)}")
+                            }
+                        )
+                    }
+
+                    fun describeCollision(proposal: PendingMemoryCollision): String {
+                        val routineMove = proposal.movedRoutineEvent?.let { "1. Move ${proposal.routine.title} to ${it.time}." } ?: "1. No open slot found for moving the routine."
+                        val taskMove = proposal.movedExistingEvent?.let { "2. Move ${proposal.conflictingEvent.title} to ${it.time}." } ?: "2. No open slot found for moving the existing task."
+                        return "Your memory routine ${proposal.routine.title} (${proposal.routineEvent.time}, ${proposal.routineEvent.month} ${proposal.routineEvent.day}) collides with ${proposal.conflictingEvent.title} (${proposal.conflictingEvent.time}).\n$routineMove\n$taskMove\n3. Keep it unscheduled.\nReply with 1, 2, or 3."
+                    }
+
+                    fun handlePendingCollisionChoice(text: String): Boolean {
+                        val proposal = pendingMemoryCollision ?: return false
+                        val normalized = text.lowercase(Locale.US)
+                        when {
+                            normalized == "1" || "move routine" in normalized || "routine" in normalized -> {
+                                val moved = proposal.movedRoutineEvent
+                                if (moved == null) {
+                                    jarvisViewModel.addLocalAssistantMessage("I could not find an open slot for the routine, so I left the memory unchanged.")
+                                } else {
+                                    val movedRoutine = movedRoutinePreference(proposal.routine, parseEventTimeRange(moved.time)?.first ?: proposal.routine.startMinutes)
+                                    applyPreferences(updatePreferencesWithRoutine(proposal.preferences, movedRoutine))
+                                    jarvisViewModel.addLocalAssistantMessage("Updated memory and moved ${proposal.routine.title} to ${moved.time}.")
+                                }
+                                pendingMemoryCollision = null
+                                return true
+                            }
+                            normalized == "2" || "move existing" in normalized || "existing" in normalized || "task" in normalized -> {
+                                val moved = proposal.movedExistingEvent
+                                if (moved == null) {
+                                    jarvisViewModel.addLocalAssistantMessage("I could not find an open slot for the existing task, so I left the memory unchanged.")
+                                } else {
+                                    val index = eventsList.indexOfFirst { it.id == moved.id }
+                                    if (index != -1) eventsList[index] = moved
+                                    applyPreferences(proposal.preferences)
+                                    jarvisViewModel.addLocalAssistantMessage("Moved ${moved.title} to ${moved.time} and saved the routine in memory.")
+                                }
+                                pendingMemoryCollision = null
+                                return true
+                            }
+                            normalized == "3" || "keep" in normalized || "cancel" in normalized || "no" in normalized -> {
+                                pendingMemoryCollision = null
+                                jarvisViewModel.addLocalAssistantMessage("I left the routine unscheduled and did not change memory.")
+                                return true
+                            }
+                        }
+                        jarvisViewModel.addLocalAssistantMessage("Please reply with 1 to move the routine, 2 to move the existing task, or 3 to keep it unscheduled.")
+                        return true
+                    }
+
+                    fun handleLocalRoutineInput(text: String): Boolean {
+                        if (handlePendingCollisionChoice(text)) return true
+                        val routine = detectRoutineFromPrompt(text)
+                        if (routine == null) {
+                            val preference = detectPreferenceFromPrompt(text) ?: return false
+                            applyPreferences(updatePreferencesWithMemoryValue(userPreferences.toList(), preference.first, preference.second))
+                            jarvisViewModel.addLocalAssistantMessage("Updated memory: ${preference.second}.")
+                            return true
+                        }
+                        val preferences = updatePreferencesWithRoutine(userPreferences.toList(), routine)
+                        val proposal = firstRoutineCollision(routine, preferences)
+                        if (proposal != null) {
+                            pendingMemoryCollision = proposal
+                            jarvisViewModel.addLocalAssistantMessage(describeCollision(proposal))
+                        } else {
+                            applyPreferences(preferences)
+                            jarvisViewModel.addLocalAssistantMessage("Updated memory: ${routine.value}. I loaded matching routine events into the current timeline window.")
+                        }
+                        return true
+                    }
+
+                    fun sendToJarvis(text: String) {
+                        if (handleLocalRoutineInput(text)) return
                         jarvisViewModel.handleUserPrompt(
                             prompt = text,
                             currentEvents = eventsList.toList(),
@@ -197,6 +628,12 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+
+                    LaunchedEffect(selectedMonth, selectedYear, userPreferences.toList()) {
+                        refreshMemoryEvents(userPreferences.toList())
+                    }
+
+                    onSpeechRecognized = { text -> sendToJarvis(text) }
 
                     NavHost(navController = navController, startDestination = "home") {
                         composable("home") {
@@ -260,49 +697,7 @@ class MainActivity : ComponentActivity() {
                                 onAddEventClick = {
                                     navController.navigate("add_event")
                                 },
-                                onSendClick = { text ->
-                                    jarvisViewModel.handleUserPrompt(
-                                        prompt = text,
-                                        currentEvents = eventsList.toList(),
-                                        userPreferences = userPreferences.toList(),
-                                        onAddEvent = { event -> 
-                                            eventsList.add(event)
-                                            highlightedEventId = event.id
-                                            selectedDay = event.day
-                                            selectedDayMonth = event.month
-                                            selectedDayYear = event.year
-                                            selectedMonth = event.month
-                                            selectedYear = event.year
-                                            viewAllEvents = false
-                                        },
-                                        onRemoveEvent = { id ->
-                                            val removedEvent = eventsList.firstOrNull { it.id == id }
-                                            eventsList.removeAll { it.id == id }
-                                            highlightedEventId = null
-                                            if (removedEvent != null) {
-                                                selectedDay = removedEvent.day
-                                                selectedDayMonth = removedEvent.month
-                                                selectedDayYear = removedEvent.year
-                                                selectedMonth = removedEvent.month
-                                                selectedYear = removedEvent.year
-                                                viewAllEvents = false
-                                            }
-                                        },
-                                        onModifyEvent = { modifiedEvent ->
-                                            val index = eventsList.indexOfFirst { it.id == modifiedEvent.id }
-                                            if (index != -1) {
-                                                eventsList[index] = modifiedEvent
-                                                highlightedEventId = modifiedEvent.id
-                                                selectedDay = modifiedEvent.day
-                                                selectedDayMonth = modifiedEvent.month
-                                                selectedDayYear = modifiedEvent.year
-                                                selectedMonth = modifiedEvent.month
-                                                selectedYear = modifiedEvent.year
-                                                viewAllEvents = false
-                                            }
-                                        }
-                                    )
-                                },
+                                onSendClick = { text -> sendToJarvis(text) },
                                 onMicClick = {
                                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -314,22 +709,13 @@ class MainActivity : ComponentActivity() {
                                 chatHistory = chatHistory,
                                 highlightedEventId = highlightedEventId,
                                 userPreferences = userPreferences.toList(),
-                                onAddPreference = { preference ->
-                                    userPreferences.add(preference)
-                                    saveUserPreferences()
-                                },
-                                onRemovePreference = { index ->
-                                    if (index in userPreferences.indices) {
-                                        userPreferences.removeAt(index)
-                                        saveUserPreferences()
-                                    }
+                                onSavePreferences = { preferences ->
+                                    applyPreferences(preferences)
                                 },
                                 showFirstRunPreferences = showFirstRunPreferences,
                                 onFirstRunPreferencesDone = { preferences ->
-                                    userPreferences.clear()
-                                    userPreferences.addAll(preferences)
                                     showFirstRunPreferences = false
-                                    saveUserPreferences()
+                                    applyPreferences(preferences)
                                 }
                             )
                         }

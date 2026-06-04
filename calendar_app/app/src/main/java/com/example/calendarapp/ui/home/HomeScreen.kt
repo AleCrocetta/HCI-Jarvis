@@ -45,6 +45,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 
+private data class MemoryPool(
+    val label: String,
+    val placeholder: String
+)
+
 @Composable
 private fun SearchResultsPanel(
     events: List<CalendarEvent>,
@@ -146,8 +151,7 @@ fun HomeScreen(
     chatHistory: List<ChatMessage> = emptyList(),
     highlightedEventId: String? = null,
     userPreferences: List<String>,
-    onAddPreference: (String) -> Unit,
-    onRemovePreference: (Int) -> Unit,
+    onSavePreferences: (List<String>) -> Unit,
     showFirstRunPreferences: Boolean,
     onFirstRunPreferencesDone: (List<String>) -> Unit
 ) {
@@ -193,7 +197,6 @@ fun HomeScreen(
     }
 
     var showMemoryDialog by remember { mutableStateOf(false) }
-    var newPreferenceText by remember { mutableStateOf("") }
     var isChatPanelExpanded by remember { mutableStateOf(false) }
     
     var showMonthDialog by remember { mutableStateOf(false) }
@@ -289,7 +292,7 @@ fun HomeScreen(
                                 onPreviousMonth = { onPreviousMonth() },
                                 onNextMonth = { onNextMonth() }
                             )
-                            Spacer(modifier = Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                         }
                     }
                 }
@@ -465,6 +468,83 @@ fun HomeScreen(
 
     // Memory & Preferences Area Dialog
     if (showMemoryDialog) {
+        val memoryPools = listOf(
+            MemoryPool(
+                "Sports routine",
+                "Gym Mon/Wed 8 AM, football Friday..."
+            ),
+            MemoryPool(
+                "Daily study time",
+                "2 hours, usually after lunch..."
+            ),
+            MemoryPool(
+                "Sleeping habits",
+                "Sleep 11:30 PM - 7:30 AM..."
+            ),
+            MemoryPool(
+                "Meal habits",
+                "Lunch around 1 PM, dinner around 8 PM..."
+            ),
+            MemoryPool(
+                "Commute / travel time",
+                "30 minutes to university..."
+            ),
+            MemoryPool(
+                "Work or class schedule",
+                "Classes Monday to Thursday mornings..."
+            ),
+            MemoryPool(
+                "Break preferences",
+                "10 minute breaks every hour..."
+            ),
+            MemoryPool(
+                "Planning style",
+                "Balanced, morning focus, avoid evenings..."
+            ),
+            MemoryPool(
+                "Task difficulty preference",
+                "Harder tasks in the morning, lighter tasks after lunch..."
+            ),
+            MemoryPool(
+                "Extra notes",
+                "Focus hours, rest days, personal habits..."
+            )
+        )
+
+        fun memoryValue(label: String): String {
+            val prefix = "$label:"
+            return userPreferences.firstOrNull { it.startsWith(prefix, ignoreCase = true) }
+                ?.substringAfter(":")
+                ?.trim()
+                ?.takeIf { it != "Not specified" }
+                .orEmpty()
+        }
+
+        val knownMemoryLabels = memoryPools.map { it.label }
+        fun unknownMemoryNotes(): String {
+            return userPreferences.filter { preference ->
+                knownMemoryLabels.none { label -> preference.startsWith("$label:", ignoreCase = true) }
+            }.joinToString("\n")
+        }
+
+        val memoryAnswers = remember(userPreferences) {
+            mutableStateMapOf<String, String>().apply {
+                memoryPools.forEach { pool ->
+                    this[pool.label] = if (pool.label == "Extra notes") {
+                        listOf(memoryValue(pool.label), unknownMemoryNotes())
+                            .filter { it.isNotBlank() }
+                            .joinToString("\n")
+                    } else {
+                        memoryValue(pool.label)
+                    }
+                }
+            }
+        }
+
+        fun memoryLine(label: String, value: String): String {
+            return "$label: ${value.ifBlank { "Not specified" }}"
+        }
+
         AlertDialog(
             onDismissRequest = { showMemoryDialog = false },
             title = {
@@ -490,98 +570,76 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(vertical = 8.dp)
                 ) {
-                    Text(
-                        text = "Customize your AI calendar preferences. Jarvis uses these to assist you:",
-                        color = TextGray,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Add Preference Input
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        color = LightBlueBg,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedTextField(
-                            value = newPreferenceText,
-                            onValueChange = { newPreferenceText = it },
-                            placeholder = { Text("Add preference...", color = TextGray, fontSize = 12.sp) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = DarkBlue,
-                                unfocusedBorderColor = TextGray,
-                                focusedContainerColor = LightGrayBg,
-                                unfocusedContainerColor = LightGrayBg
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true
+                        Text(
+                            text = "Memory pools sync with Jarvis input and load regular routines into the calendar.",
+                            color = DarkBlue,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                if (newPreferenceText.isNotBlank()) {
-                                    onAddPreference(newPreferenceText)
-                                    newPreferenceText = ""
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            modifier = Modifier.height(48.dp)
-                        ) {
-                            Text("Save", color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Preferences List
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 200.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        userPreferences.forEachIndexed { index, pref ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(LightGrayBg)
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+
+                    memoryPools.forEach { pool ->
+                        Surface(
+                            color = LightGrayBg,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                                 Text(
-                                    text = pref,
+                                    text = pool.label,
                                     color = DarkBlue,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.weight(1f)
+                                    fontWeight = FontWeight.Bold
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "❌",
-                                    fontSize = 10.sp,
-                                    modifier = Modifier
-                                        .clickable { onRemovePreference(index) }
-                                        .padding(4.dp)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedTextField(
+                                    value = memoryAnswers[pool.label].orEmpty(),
+                                    onValueChange = { memoryAnswers[pool.label] = it },
+                                    placeholder = { Text(pool.placeholder, color = TextGray) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = if (pool.label == "Extra notes") 2 else 1,
+                                    singleLine = pool.label != "Extra notes",
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = DarkBlue.copy(alpha = 0.45f),
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedContainerColor = White,
+                                        unfocusedContainerColor = White
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
                                 )
                             }
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showMemoryDialog = false }) {
-                    Text("Done", color = DarkBlue, fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = {
+                        onSavePreferences(
+                            memoryPools.map { pool ->
+                                memoryLine(pool.label, memoryAnswers[pool.label].orEmpty())
+                            }
+                        )
+                        showMemoryDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Save Memory", color = White, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = White,

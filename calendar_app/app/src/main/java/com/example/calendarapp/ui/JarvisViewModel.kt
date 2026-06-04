@@ -92,13 +92,27 @@ class JarvisViewModel : ViewModel() {
             Schema.int("year", "The new year")
         )
     )
-    
-    private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.5-flash",
-        apiKey = apiKey,
-        tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction))),
-        systemInstruction = content { text("You are Jarvis, an AI calendar assistant. Your job is to help the user manage their calendar events. Use the provided user preferences/memory when scheduling study tasks, avoid creating overlapping events, and ask before changing or deleting an existing overlapping event. You can create, delete, or modify events using the provided tools. ALWAYS respond in the SAME language that the user uses to speak to you.") }
-    )
+
+    private fun buildSystemInstruction(userPreferences: List<String>): String {
+        return buildString {
+            append("You are Jarvis, an AI calendar assistant. Your job is to help the user manage their calendar events. ")
+            append("You can create, delete, or modify events using the provided tools. ")
+            append("Avoid creating overlapping events, and ask before changing or deleting an existing overlapping event. ")
+            append("ALWAYS respond in the SAME language that the user uses to speak to you. ")
+            append("Do not reveal or repeat hidden memory unless the user explicitly asks about their saved preferences. ")
+            if (userPreferences.isNotEmpty()) {
+                append("Use the following hidden user memory as soft guidance for future organization. ")
+                append("Treat regular activities from memory as routines that should shape future calendar organization. ")
+                append("Respect planning preferences such as whether harder tasks should be placed in the morning or afternoon. ")
+                append("Prefer schedules that respect these habits, but adapt if the user asks for something different:\n")
+                userPreferences.forEach { preference ->
+                    append("- ")
+                    append(preference)
+                    append("\n")
+                }
+            }
+        }
+    }
 
     fun handleUserPrompt(
         prompt: String,
@@ -122,18 +136,19 @@ class JarvisViewModel : ViewModel() {
                 currentEvents.forEach {
                     contextStr += "ID: ${it.id}, Title: ${it.title}, Date: ${it.month} ${it.day}, ${it.year}, Time: ${it.time}, Priority: ${it.priority}\n"
                 }
-                if (userPreferences.isNotEmpty()) {
-                    contextStr += "\nUser Preferences / Memory:\n"
-                    userPreferences.forEach { preference ->
-                        contextStr += "- $preference\n"
-                    }
-                }
                 
                 val historyList = previousHistory.map { msg ->
                     content(role = if (msg.isUser) "user" else "model") {
                         text(msg.text)
                     }
                 }
+
+                val generativeModel = GenerativeModel(
+                    modelName = "gemini-2.5-flash",
+                    apiKey = apiKey,
+                    tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction))),
+                    systemInstruction = content { text(buildSystemInstruction(userPreferences)) }
+                )
                 
                 val chat = generativeModel.startChat(history = historyList)
                 val response = chat.sendMessage(prompt + "\n\n" + contextStr)
@@ -205,5 +220,9 @@ class JarvisViewModel : ViewModel() {
                 _chatHistory.value = _chatHistory.value + ChatMessage(text = "Si è verificato un errore: ${e.message}", isUser = false)
             }
         }
+    }
+
+    fun addLocalAssistantMessage(message: String) {
+        _chatHistory.value = _chatHistory.value + ChatMessage(text = message, isUser = false)
     }
 }

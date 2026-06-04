@@ -124,21 +124,21 @@ fun CalendarGrid(
                     text = day,
                     color = DarkBlue,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center
                 )
             }
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         
         // Vertical Snapping Pager for Days Grid ( Instagram/TikTok Reel Paging feel!)
         VerticalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(260.dp)
+                .height(252.dp)
         ) { page ->
             val pageYear = page / 12
             val pageMonthName = monthsList[page % 12]
@@ -204,19 +204,23 @@ fun CalendarMonthGrid(
     }
 
     val currentMonthIndex = monthsList.indexOf(selectedMonth)
+    val nextMonthName = monthsList[(currentMonthIndex + 1) % 12]
+    val nextMonthYear = if (selectedMonth == "December") selectedYear + 1 else selectedYear
     val prevMonthName = monthsList[if (currentMonthIndex == 0) 11 else currentMonthIndex - 1]
     val prevMonthYear = if (selectedMonth == "January") selectedYear - 1 else selectedYear
 
     var currentDay = 1
+    var nextMonthDay = 1
     
-    val numRows = kotlin.math.ceil((startDayOffset + daysInMonth) / 7f).toInt()
+    // Always render exactly 6 rows to lock the grid height perfectly!
+    val numRows = 6
 
     Column(modifier = Modifier.fillMaxWidth()) {
         for (row in 0 until numRows) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 2.dp), // Margins tightened for optimal 6-row balance
+                    .padding(vertical = 0.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 for (col in 0..6) {
@@ -255,6 +259,7 @@ fun CalendarMonthGrid(
 
                             val remainingEvents = dayEvents.count { !it.isCompleted }
                             val cellBgColor = when {
+                                isCellPast -> Color(0xFFE0E0E0)
                                 dayEvents.isEmpty() -> Color.Transparent
                                 remainingEvents == 0 -> Color(0xFF81C784)
                                 remainingEvents in 1..2 -> Color(0xFFFFF9C4)
@@ -280,7 +285,19 @@ fun CalendarMonthGrid(
                             )
                             currentDay++
                         } else {
-                            Spacer(modifier = Modifier.size(42.dp))
+                            val dayNum = nextMonthDay
+                            CalendarCell(
+                                day = dayNum.toString(),
+                                isSelected = false,
+                                bgColor = Color.Transparent,
+                                textColor = Color(0xFFBDBDBD),
+                                isPast = true,
+                                onClick = {
+                                    onNextMonth()
+                                    onDaySelected(dayNum, nextMonthName, nextMonthYear)
+                                }
+                            )
+                            nextMonthDay++
                         }
                     }
                 }
@@ -318,12 +335,12 @@ fun CalendarCell(
     }
 
     Box(
-        modifier = Modifier.size(42.dp),
+        modifier = Modifier.size(36.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(actualBgColor)
                 .then(borderModifier)
@@ -334,7 +351,7 @@ fun CalendarCell(
                 text = day,
                 color = actualTextColor,
                 fontWeight = if (isToday || isSelected || !isPast) FontWeight.Bold else FontWeight.Normal,
-                fontSize = 13.sp
+                fontSize = 12.sp
             )
         }
     }
