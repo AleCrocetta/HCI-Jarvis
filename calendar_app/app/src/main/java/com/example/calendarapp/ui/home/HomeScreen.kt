@@ -9,7 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -360,7 +360,6 @@ fun HomeScreen(
                             },
                             onEditEvent = { event ->
                                 onEditEvent(event)
-                                showFeedback("Success: updated ${event.title}.")
                             },
                             highlightedEventId = highlightedEventId
                         )
@@ -371,16 +370,23 @@ fun HomeScreen(
             }
 
             val feedbackMessage = currentFeedbackMessage
-            if (feedbackMessage != null && dismissedFeedbackId != feedbackMessage.id) {
+            if (feedbackMessage != null && dismissedFeedbackId != feedbackMessage.id && pendingCollisionNewEvent == null) {
                 val feedbackState = classifyAiFeedback(feedbackMessage.text)
                 Surface(
                     color = White,
                     shape = RoundedCornerShape(16.dp),
                     shadowElevation = 8.dp,
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
+                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = if (showUndoSnackbar) 88.dp else 16.dp)
+                        .pointerInput(feedbackMessage.id) {
+                            detectVerticalDragGestures { _, dragAmount ->
+                                if (dragAmount < -20f) {
+                                    dismissedFeedbackId = feedbackMessage.id
+                                }
+                            }
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -528,12 +534,6 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Add, // Placeholder, custom psychology icon imported in TopBar but we can use fallback or custom Brain drawing!
-                        contentDescription = null,
-                        tint = DarkBlue,
-                        modifier = Modifier.size(24.dp)
-                    )
                     Text(
                         text = "Memory Area",
                         color = DarkBlue,
@@ -714,25 +714,43 @@ fun HomeScreen(
         AlertDialog(
             onDismissRequest = {},
             title = {
-                Text(
-                    text = "Collision",
-                    color = DarkBlue,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
+                Surface(
+                    color = Color(0xFFFFB300),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Collision warning",
+                            tint = Color(0xFF5D3500),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Scheduling conflict",
+                            color = Color(0xFF5D3500),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                    }
+                }
             },
             text = {
                 Column {
                     Text(
                         text = "${pendingCollisionNewEvent.title} (${pendingCollisionNewEvent.time}) overlaps with ${pendingCollisionExistingEvent.title} (${pendingCollisionExistingEvent.time}) on ${pendingCollisionNewEvent.month} ${pendingCollisionNewEvent.day}, ${pendingCollisionNewEvent.year}.",
-                        color = TextGray,
+                        color = Color(0xFF5D3500),
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Choose how Jarvis should resolve this collision.",
-                        color = DarkBlue,
+                        color = Color(0xFF5D3500),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -740,21 +758,40 @@ fun HomeScreen(
             },
             confirmButton = {
                 Column {
-                    TextButton(onClick = onCancelNewEvent) {
-                        Text("Cancel the new event", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = onCancelNewEvent,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8D1B1B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Cancel the new event", color = White, fontWeight = FontWeight.Bold)
                     }
-                    TextButton(onClick = onKeepBothEvents) {
-                        Text("Keep both", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onKeepBothEvents,
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Keep both", color = White, fontWeight = FontWeight.Bold)
                     }
-                    TextButton(onClick = onReplaceExistingEvent) {
-                        Text("Replace the existing event", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onReplaceExistingEvent,
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Replace the existing event", color = White, fontWeight = FontWeight.Bold)
                     }
-                    TextButton(onClick = onRescheduleExistingEvent) {
-                        Text("Reschedule the existing event", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onRescheduleExistingEvent,
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Reschedule the existing event", color = White, fontWeight = FontWeight.Bold)
                     }
                 }
             },
-            containerColor = White,
+            containerColor = Color(0xFFFFF8E1),
             shape = RoundedCornerShape(24.dp)
         )
     }

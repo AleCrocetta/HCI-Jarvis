@@ -302,6 +302,22 @@ class MainActivity : ComponentActivity() {
 
                     fun memoryEventTitle(label: String, value: String): String {
                         val normalizedValue = normalizedMemoryText(value)
+                        val genericLabels = setOf(
+                            "memory setting",
+                            "task difficulty preference",
+                            "sports routine",
+                            "daily study time",
+                            "work or class schedule",
+                            "sleeping habits",
+                            "meal habits",
+                            "commute / travel time",
+                            "break preferences",
+                            "planning style",
+                            "extra notes"
+                        )
+                        if (label.isNotBlank() && label.lowercase(Locale.US) !in genericLabels && !label.startsWith("Memory ", ignoreCase = true)) {
+                            return label.uppercase(Locale.US)
+                        }
                         val dayPattern = Regex("""\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b""", RegexOption.IGNORE_CASE)
                         val timePattern = Regex("""\b\d{1,2}(?::\d{2})?\s*(AM|PM)?\s*(?:-|to)?\s*\d{0,2}(?::\d{2})?\s*(AM|PM)?\b""", RegexOption.IGNORE_CASE)
                         val stopIndex = listOfNotNull(
@@ -600,10 +616,114 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    fun dayOfWeekForEvent(event: CalendarEvent): Int? {
+                        val monthIndex = monthsList.indexOfFirst { it.equals(event.month, ignoreCase = true) }
+                        if (monthIndex == -1) return null
+                        return runCatching {
+                            Calendar.getInstance().apply {
+                                set(Calendar.YEAR, event.year)
+                                set(Calendar.MONTH, monthIndex)
+                                set(Calendar.DAY_OF_MONTH, event.day)
+                            }.get(Calendar.DAY_OF_WEEK)
+                        }.getOrNull()
+                    }
+
+                    fun weekdayName(weekday: Int): String {
+                        return when (weekday) {
+                            Calendar.MONDAY -> "Monday"
+                            Calendar.TUESDAY -> "Tuesday"
+                            Calendar.WEDNESDAY -> "Wednesday"
+                            Calendar.THURSDAY -> "Thursday"
+                            Calendar.FRIDAY -> "Friday"
+                            Calendar.SATURDAY -> "Saturday"
+                            Calendar.SUNDAY -> "Sunday"
+                            else -> "Monday"
+                        }
+                    }
+
+                    fun routineFromEvent(event: CalendarEvent): MemoryRoutine? {
+                        val range = parseEventTimeRange(event.time) ?: return null
+                        val weekday = dayOfWeekForEvent(event) ?: return null
+                        val title = event.title.uppercase(Locale.US)
+                        val value = "${title.lowercase(Locale.US)} ${weekdayName(weekday)} from ${formatMemoryTime(range.first)} to ${formatMemoryTime(range.last + 1)}"
+                        return MemoryRoutine(
+                            label = title,
+                            value = value,
+                            title = title,
+                            weekdays = setOf(weekday),
+                            repeatsDaily = false,
+                            startMinutes = range.first,
+                            endMinutes = range.last + 1
+                        )
+                    }
+
+                    fun sameRoutineSlot(first: CalendarEvent, second: CalendarEvent): Boolean {
+                        return first.title.equals(second.title, ignoreCase = true) &&
+                            first.time == second.time &&
+                            dayOfWeekForEvent(first) == dayOfWeekForEvent(second)
+                    }
+
+                    fun maybeSaveRepeatedRoutine(event: CalendarEvent) {
+                        if (event.id.startsWith("memory:")) return
+                        val routine = routineFromEvent(event) ?: return
+                        val alreadySaved = parseMemoryRoutines(userPreferences.toList()).any { saved ->
+                            saved.title.equals(routine.title, ignoreCase = true) &&
+                                saved.startMinutes == routine.startMinutes &&
+                                saved.endMinutes == routine.endMinutes &&
+                                routine.weekdays.any { it in saved.weekdays }
+                        }
+                        if (alreadySaved) return
+                        val repeatedDates = eventsList
+                            .filter { !it.id.startsWith("memory:") && sameRoutineSlot(it, event) }
+                            .map { "${it.year}-${it.month}-${it.day}" }
+                            .toSet()
+                        if (repeatedDates.size >= 2) {
+                            applyPreferences(updatePreferencesWithRoutine(userPreferences.toList(), routine))
+                            jarvisViewModel.addLocalAssistantMessage("Success: ${routine.title} at ${event.time} repeats on ${weekdayName(routine.weekdays.first())}, so I saved it to memory as a routine.")
+                        }
+                    }
+
+                    fun syncRoutineRename(oldEvent: CalendarEvent, newTitle: String): Boolean {
+                        if (!oldEvent.id.startsWith("memory:") || oldEvent.title == newTitle) return false
+                        val oldRoutine = routineFromEvent(oldEvent) ?: return false
+                        val updatedRoutine = oldRoutine.copy(
+                            label = newTitle.uppercase(Locale.US),
+                            title = newTitle.uppercase(Locale.US),
+                            value = oldRoutine.value.replace(oldRoutine.title.lowercase(Locale.US), newTitle.lowercase(Locale.US), ignoreCase = true)
+                        )
+                        var replaced = false
+                        val oldActivityKey = normalizedActivityKey(oldRoutine.value)
+                        val updatedPreferences = userPreferences.map { preference ->
+                            val name = preference.substringBefore(":").trim()
+                            val value = normalizedMemoryText(preference.substringAfter(":", preference).trim())
+                            val sameName = name.equals(oldRoutine.title, ignoreCase = true)
+                            val sameRoutine = oldActivityKey.isNotBlank() && normalizedActivityKey(value) == oldActivityKey
+                            if (sameName || sameRoutine) {
+                                replaced = true
+                                "${updatedRoutine.title}: ${updatedRoutine.value}"
+                            } else {
+                                preference
+                            }
+                        }
+                        applyPreferences(if (replaced) updatedPreferences else updatedPreferences + "${updatedRoutine.title}: ${updatedRoutine.value}")
+                        eventsList.firstOrNull {
+                            it.title == updatedRoutine.title &&
+                                it.day == oldEvent.day &&
+                                it.month.equals(oldEvent.month, ignoreCase = true) &&
+                                it.year == oldEvent.year &&
+                                it.time == oldEvent.time
+                        }?.let { focusEvent(it) }
+                        jarvisViewModel.addLocalAssistantMessage("Success: renamed the ${oldRoutine.title} routine to ${updatedRoutine.title} across the calendar.")
+                        return true
+                    }
+
                     fun saveEventToCalendar(event: CalendarEvent, isModification: Boolean) {
                         if (isModification) {
                             val index = eventsList.indexOfFirst { it.id == event.id }
                             if (index != -1) {
+                                if (syncRoutineRename(eventsList[index], event.title)) {
+                                    return
+                                }
                                 eventsList[index] = event
                             } else {
                                 eventsList.add(event)
@@ -612,6 +732,9 @@ class MainActivity : ComponentActivity() {
                             eventsList.add(event)
                         }
                         focusEvent(event)
+                        if (!isModification) {
+                            maybeSaveRepeatedRoutine(event)
+                        }
                     }
 
                     fun eventDurationMinutes(event: CalendarEvent): Int? {
@@ -619,6 +742,51 @@ class MainActivity : ComponentActivity() {
                     }
 
                     fun resolvePendingEventCollision(choice: String) {
+                        val memoryProposal = pendingMemoryCollision
+                        if (memoryProposal != null) {
+                            when (choice) {
+                                "cancel" -> {
+                                    pendingMemoryCollision = null
+                                    pendingEventCollision = null
+                                    jarvisViewModel.addLocalAssistantMessage("Success: cancelled ${memoryProposal.routine.title}. The calendar was left unchanged.")
+                                }
+                                "keep" -> {
+                                    applyPreferences(memoryProposal.preferences)
+                                    if (eventsList.none { it.id == memoryProposal.routineEvent.id }) {
+                                        eventsList.add(memoryProposal.routineEvent)
+                                    }
+                                    focusEvent(memoryProposal.routineEvent)
+                                    pendingMemoryCollision = null
+                                    pendingEventCollision = null
+                                    jarvisViewModel.addLocalAssistantMessage("Success: kept both ${memoryProposal.routine.title} and ${memoryProposal.conflictingEvent.title}.")
+                                }
+                                "replace" -> {
+                                    eventsList.removeAll { it.id == memoryProposal.conflictingEvent.id }
+                                    applyPreferences(memoryProposal.preferences)
+                                    eventsList.firstOrNull { it.id == memoryProposal.routineEvent.id }?.let { focusEvent(it) }
+                                    pendingMemoryCollision = null
+                                    pendingEventCollision = null
+                                    jarvisViewModel.addLocalAssistantMessage("Success: replaced ${memoryProposal.conflictingEvent.title} with ${memoryProposal.routine.title}.")
+                                }
+                                "reschedule" -> {
+                                    val moved = memoryProposal.movedExistingEvent
+                                    if (moved == null) {
+                                        pendingMemoryCollision = null
+                                        pendingEventCollision = null
+                                        jarvisViewModel.addLocalAssistantMessage("Missing info: no free slot was found to reschedule ${memoryProposal.conflictingEvent.title}. No calendar changes were made.")
+                                    } else {
+                                        val index = eventsList.indexOfFirst { it.id == moved.id }
+                                        if (index != -1) eventsList[index] = moved
+                                        applyPreferences(memoryProposal.preferences)
+                                        eventsList.firstOrNull { it.id == memoryProposal.routineEvent.id }?.let { focusEvent(it) }
+                                        pendingMemoryCollision = null
+                                        pendingEventCollision = null
+                                        jarvisViewModel.addLocalAssistantMessage("Success: saved ${memoryProposal.routine.title} and rescheduled ${moved.title} to ${moved.time}.")
+                                    }
+                                }
+                            }
+                            return
+                        }
                         val proposal = pendingEventCollision ?: return
                         when (choice) {
                             "cancel" -> {
@@ -637,7 +805,6 @@ class MainActivity : ComponentActivity() {
                                 jarvisViewModel.addLocalAssistantMessage("Success: replaced ${proposal.conflictingEvent.title} with ${proposal.newEvent.title}.")
                             }
                             "reschedule" -> {
-                                saveEventToCalendar(proposal.newEvent, proposal.isModification)
                                 val duration = eventDurationMinutes(proposal.conflictingEvent)
                                 val newStart = duration?.let {
                                     findBestOpenSlot(
@@ -651,8 +818,9 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if (duration == null || newStart == null) {
                                     pendingEventCollision = null
-                                    jarvisViewModel.addLocalAssistantMessage("Missing info: no free slot was found to reschedule ${proposal.conflictingEvent.title}. ${proposal.newEvent.title} was saved as requested.")
+                                    jarvisViewModel.addLocalAssistantMessage("Missing info: no free slot was found to reschedule ${proposal.conflictingEvent.title}. No calendar changes were made.")
                                 } else {
+                                    saveEventToCalendar(proposal.newEvent, proposal.isModification)
                                     val index = eventsList.indexOfFirst { it.id == proposal.conflictingEvent.id }
                                     if (index != -1) {
                                         eventsList[index] = proposal.conflictingEvent.copy(time = "${formatMemoryTime(newStart)} - ${formatMemoryTime(newStart + duration)}")
@@ -758,7 +926,7 @@ class MainActivity : ComponentActivity() {
                         val proposal = firstRoutineCollision(routine, preferences)
                         if (proposal != null) {
                             pendingMemoryCollision = proposal
-                            jarvisViewModel.addLocalAssistantMessage(describeCollision(proposal))
+                            pendingEventCollision = PendingEventCollision(proposal.routineEvent, proposal.conflictingEvent, false)
                         } else {
                             applyPreferences(preferences)
                             jarvisViewModel.addLocalAssistantMessage("Updated memory: ${routine.value}. I loaded matching routine events into the current timeline window.")
@@ -842,14 +1010,21 @@ class MainActivity : ComponentActivity() {
                                 onEditEvent = { event ->
                                     val index = eventsList.indexOfFirst { it.id == event.id }
                                     if (index != -1) {
-                                        eventsList[index] = event
-                                        highlightedEventId = event.id
-                                        selectedDay = event.day
-                                        selectedDayMonth = event.month
-                                        selectedDayYear = event.year
-                                        selectedMonth = event.month
-                                        selectedYear = event.year
-                                        viewAllEvents = false
+                                        val oldEvent = eventsList[index]
+                                        val conflict = findConflictingEvent(event, ignoreEventId = event.id)
+                                        if (conflict != null) {
+                                            pendingEventCollision = PendingEventCollision(event, conflict, true)
+                                        } else if (!syncRoutineRename(oldEvent, event.title)) {
+                                            eventsList[index] = event
+                                            highlightedEventId = event.id
+                                            selectedDay = event.day
+                                            selectedDayMonth = event.month
+                                            selectedDayYear = event.year
+                                            selectedMonth = event.month
+                                            selectedYear = event.year
+                                            viewAllEvents = false
+                                            jarvisViewModel.addLocalAssistantMessage("Success: updated ${event.title}.")
+                                        }
                                     }
                                 },
                                 activeTab = activeTab,
@@ -917,7 +1092,6 @@ class MainActivity : ComponentActivity() {
                                         selectedDayMonth = selectedMonth
                                         selectedDayYear = year
                                         selectedYear = year
-                                        jarvisViewModel.addLocalAssistantMessage("Collision: ${newEvent.title} (${newEvent.time}) overlaps with ${conflict.title} (${conflict.time}) on ${newEvent.month} ${newEvent.day}, ${newEvent.year}.")
                                     } else {
                                         saveEventToCalendar(newEvent, false)
                                     }
