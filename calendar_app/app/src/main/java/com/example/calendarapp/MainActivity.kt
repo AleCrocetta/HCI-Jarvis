@@ -513,9 +513,13 @@ class MainActivity : ComponentActivity() {
 
                     fun detectRoutineFromPrompt(prompt: String): MemoryRoutine? {
                         val normalizedPrompt = normalizedMemoryText(prompt)
-                        val hasRoutineLanguage = Regex("""\b(remember|memory|routine|regular|weekly|usually|every|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|play|do|have|train|gym|football|study|class|work|ricorda|memoria|regolare|settimanale|ogni|gioco|faccio|palestra|calcio|studio|lezione|lavoro)\b""", RegexOption.IGNORE_CASE)
+                        val hasRecurringLanguage = Regex("""\b(routine|regular|weekly|usually|every|daily|regolare|settimanale|ogni|giornalmente)\b""", RegexOption.IGNORE_CASE)
                             .containsMatchIn(normalizedPrompt)
-                        if (!hasRoutineLanguage) return null
+                        val hasMemoryLanguage = Regex("""\b(remember|memory|ricorda|memoria)\b""", RegexOption.IGNORE_CASE)
+                            .containsMatchIn(normalizedPrompt)
+                        val hasSingleEventLanguage = Regex("""\b(appointment|event|meeting|call|visit|deadline|reservation|appuntamento|evento|riunione|chiamata|visita|scadenza|prenotazione)\b""", RegexOption.IGNORE_CASE)
+                            .containsMatchIn(normalizedPrompt)
+                        if (!hasRecurringLanguage && (!hasMemoryLanguage || hasSingleEventLanguage)) return null
                         return parseMemoryRoutines(listOf("${memoryLabelForText(normalizedPrompt)}: $normalizedPrompt")).firstOrNull()
                     }
 

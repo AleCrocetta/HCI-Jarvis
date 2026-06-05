@@ -145,7 +145,7 @@ class JarvisViewModel : ViewModel() {
                 }
 
                 val generativeModel = GenerativeModel(
-                    modelName = "gemini-3.1-flash-light",
+                    modelName = "gemini-3.5-flash",
                     apiKey = apiKey,
                     tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction))),
                     systemInstruction = content { text(buildSystemInstruction(userPreferences)) }
@@ -170,7 +170,7 @@ class JarvisViewModel : ViewModel() {
                             val overlap = findOverlappingEvent(event, currentEvents)
                             if (overlap != null) {
                                 onCollision(event, overlap, false)
-                                responseText = ""
+                                responseText = "Collision: ${event.title} (${event.time}) overlaps with ${overlap.title} (${overlap.time}) on ${event.month} ${event.day}, ${event.year}."
                             } else {
                                 onAddEvent(event)
                                 if (responseText.isBlank()) responseText = "Ho creato l'evento: ${event.title}."
@@ -204,7 +204,7 @@ class JarvisViewModel : ViewModel() {
                                 val overlap = findOverlappingEvent(modifiedEvent, currentEvents, ignoreEventId = id)
                                 if (overlap != null) {
                                     onCollision(modifiedEvent, overlap, true)
-                                    responseText = ""
+                                    responseText = "Collision: ${modifiedEvent.title} (${modifiedEvent.time}) overlaps with ${overlap.title} (${overlap.time}) on ${modifiedEvent.month} ${modifiedEvent.day}, ${modifiedEvent.year}."
                                 } else {
                                     onModifyEvent(modifiedEvent)
                                     if (responseText.isBlank()) responseText = "Ho modificato l'evento: ${modifiedEvent.title}."
