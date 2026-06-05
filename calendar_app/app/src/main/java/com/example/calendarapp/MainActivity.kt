@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                     var selectedYear by remember { mutableIntStateOf(currentYear) }
                     var highlightedEventId by remember { mutableStateOf<String?>(null) }
                     val memoryStore = remember { getSharedPreferences("jarvis_memory", Context.MODE_PRIVATE) }
-                    var showFirstRunPreferences by remember { mutableStateOf(!memoryStore.getBoolean("preferences_saved", false)) }
+                    var showFirstRunPreferences by remember { mutableStateOf(false) }
                     val userPreferences = remember {
                         val savedPreferences = memoryStore.getString("user_preferences", "").orEmpty()
                         mutableStateListOf<String>().apply {
@@ -222,9 +222,29 @@ class MainActivity : ComponentActivity() {
                         return value
                             .replace(Regex("""\bfoot\s+ball\b""", RegexOption.IGNORE_CASE), "football")
                             .replace(Regex("""\b(\d{1,2})\s+(\d{2})(?=\s*(?:AM|PM|am|pm|\bto\b|-))"""), "$1:$2")
+                            .replace(Regex("""\bcalcio\b""", RegexOption.IGNORE_CASE), "football")
+                            .replace(Regex("""\bpalestra\b""", RegexOption.IGNORE_CASE), "gym")
+                            .replace(Regex("""\ballenamento\b""", RegexOption.IGNORE_CASE), "training")
+                            .replace(Regex("""\bstudio\b""", RegexOption.IGNORE_CASE), "study")
+                            .replace(Regex("""\blezione\b""", RegexOption.IGNORE_CASE), "class")
+                            .replace(Regex("""\blavoro\b""", RegexOption.IGNORE_CASE), "work")
+                            .replace(Regex("""\bmattina\b""", RegexOption.IGNORE_CASE), "morning")
+                            .replace(Regex("""\bpomeriggio\b""", RegexOption.IGNORE_CASE), "afternoon")
+                            .replace(Regex("""\bsera\b""", RegexOption.IGNORE_CASE), "evening")
+                            .replace(Regex("""\bnotte\b""", RegexOption.IGNORE_CASE), "night")
+                            .replace(Regex("""\bdifficile\b""", RegexOption.IGNORE_CASE), "hard")
+                            .replace(Regex("""\bpreferisco\b""", RegexOption.IGNORE_CASE), "prefer")
                             .replace(Regex("""\btutti\s+i\s+giorni\b""", RegexOption.IGNORE_CASE), "every day")
                             .replace(Regex("""\bogni\s+giorno\b""", RegexOption.IGNORE_CASE), "every day")
                             .replace(Regex("""\bgiornalmente\b""", RegexOption.IGNORE_CASE), "every day")
+                            .replace(Regex("""\bluned[iì]\b""", RegexOption.IGNORE_CASE), "monday")
+                            .replace(Regex("""\bmarted[iì]\b""", RegexOption.IGNORE_CASE), "tuesday")
+                            .replace(Regex("""\bmercoled[iì]\b""", RegexOption.IGNORE_CASE), "wednesday")
+                            .replace(Regex("""\bgioved[iì]\b""", RegexOption.IGNORE_CASE), "thursday")
+                            .replace(Regex("""\bvenerd[iì]\b""", RegexOption.IGNORE_CASE), "friday")
+                            .replace(Regex("""\bsabato\b""", RegexOption.IGNORE_CASE), "saturday")
+                            .replace(Regex("""\bdomenica\b""", RegexOption.IGNORE_CASE), "sunday")
+                            .replace(Regex("""\b(ricorda|memoria|routine|regolare|settimanale|di\s+solito|ogni|gioco|faccio|ho|allenamento|palestra|calcio|studio|lezione|lavoro)\b""", RegexOption.IGNORE_CASE), "routine")
                     }
 
                     fun normalizedActivityKey(value: String): String {
@@ -327,7 +347,7 @@ class MainActivity : ComponentActivity() {
                                     weekdays = weekdays,
                                     repeatsDaily = repeatsDaily,
                                     startMinutes = range.first,
-                                    endMinutes = range.last
+                                    endMinutes = range.last + 1
                                 )
                             }
                         }
@@ -479,9 +499,9 @@ class MainActivity : ComponentActivity() {
 
                     fun detectPreferenceFromPrompt(prompt: String): Pair<String, String>? {
                         val isPlanningPreference = Regex("""\b(prefer|preference|like|hard|harder|difficult|difficulty|demanding|heavy|complex|intense|morning|afternoon|evening|night)\b""", RegexOption.IGNORE_CASE)
-                            .containsMatchIn(prompt)
+                            .containsMatchIn(normalizedMemoryText(prompt))
                         if (!isPlanningPreference) return null
-                        val label = memoryLabelForText(prompt)
+                        val label = memoryLabelForText(normalizedMemoryText(prompt))
                         if (label == "Extra notes") return null
                         return label to prompt.trim()
                     }

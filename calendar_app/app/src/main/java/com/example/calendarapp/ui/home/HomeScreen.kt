@@ -51,6 +51,23 @@ private data class MemoryEntry(
     val value: String
 )
 
+private enum class AiFeedbackState(val label: String) {
+    Success("Success"),
+    MissingInfo("Missing info"),
+    ClarificationNeeded("Clarification needed")
+}
+
+private fun classifyAiFeedback(message: String): AiFeedbackState {
+    val normalized = message.lowercase()
+    return when {
+        listOf("collides", "overlap", "conflict", "ambiguous", "reply with", "sovrappone", "conflitto", "ambiguo", "chiarire", "rispondi").any { it in normalized } ->
+            AiFeedbackState.ClarificationNeeded
+        listOf("missing", "need", "provide", "details", "date", "time", "manca", "serve", "specifica", "quando", "data", "giorno", "orario", "dettagli").any { it in normalized } ->
+            AiFeedbackState.MissingInfo
+        else -> AiFeedbackState.Success
+    }
+}
+
 @Composable
 private fun SearchResultsPanel(
     events: List<CalendarEvent>,
@@ -198,7 +215,7 @@ fun HomeScreen(
     }
 
     var showMemoryDialog by remember { mutableStateOf(false) }
-    var isChatPanelExpanded by remember { mutableStateOf(false) }
+    var dismissedFeedbackId by remember { mutableStateOf<String?>(null) }
     
     var showMonthDialog by remember { mutableStateOf(false) }
 
@@ -325,81 +342,51 @@ fun HomeScreen(
                 }
             }
 
-            if (chatHistory.isNotEmpty()) {
+            val latestAiMessage = chatHistory.lastOrNull { !it.isUser }
+            if (latestAiMessage != null && dismissedFeedbackId != latestAiMessage.id) {
+                val feedbackState = classifyAiFeedback(latestAiMessage.text)
                 Surface(
                     color = White,
-                    shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
-                    shadowElevation = 10.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 8.dp,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
+                        .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .height(if (isChatPanelExpanded) 280.dp else 46.dp)
-                        .padding(horizontal = 16.dp)
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures { _, dragAmount ->
-                                if (dragAmount < -10f) {
-                                    isChatPanelExpanded = true
-                                } else if (dragAmount > 10f) {
-                                    isChatPanelExpanded = false
-                                }
-                            }
-                        }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { isChatPanelExpanded = !isChatPanelExpanded }
-                                .padding(top = 8.dp, bottom = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(44.dp)
-                                    .height(5.dp)
-                                    .clip(CircleShape)
-                                    .background(TextGray.copy(alpha = 0.45f))
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = if (isChatPanelExpanded) "Jarvis conversation" else "Swipe up for Jarvis replies",
-                                color = TextGray,
-                                fontSize = 12.sp,
+                                text = feedbackState.label,
+                                color = DarkBlue,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = latestAiMessage.text,
+                                color = TextGray,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
                         }
-
-                        if (isChatPanelExpanded) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(chatHistory.takeLast(30), key = { it.id }) { message ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
-                                    ) {
-                                        Surface(
-                                            color = if (message.isUser) DarkBlue else LightGrayBg,
-                                            shape = RoundedCornerShape(14.dp),
-                                            modifier = Modifier.widthIn(max = 280.dp)
-                                        ) {
-                                            Text(
-                                                text = message.text,
-                                                color = if (message.isUser) White else DarkBlue,
-                                                fontSize = 13.sp,
-                                                lineHeight = 17.sp,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                        Text(
+                            text = "Dismiss",
+                            color = DarkBlue,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { dismissedFeedbackId = latestAiMessage.id }
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                        )
                         }
-                    }
                 }
             }
 
@@ -469,7 +456,7 @@ fun HomeScreen(
 
     // Memory & Preferences Area Dialog
     if (showMemoryDialog) {
-        val memoryEntries = remember(userPreferences) {
+        val memoryEntries = remember(showMemoryDialog) {
             mutableStateListOf<MemoryEntry>().apply {
                 userPreferences.forEachIndexed { index, preference ->
                     val hasName = preference.contains(":")
@@ -481,8 +468,16 @@ fun HomeScreen(
                 }
             }
         }
-        var expandedMemoryPool by remember(userPreferences) {
+        var expandedMemoryPool by remember(showMemoryDialog) {
             mutableStateOf(memoryEntries.firstOrNull()?.id)
+        }
+
+        fun saveMemoryEntries() {
+            onSavePreferences(
+                memoryEntries
+                    .filter { it.name.isNotBlank() && it.value.isNotBlank() }
+                    .map { "${it.name.trim()}: ${it.value.trim()}" }
+            )
         }
 
         fun memoryFolder(entry: MemoryEntry): String {
@@ -614,6 +609,7 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .clickable {
                                                 memoryEntries.removeAt(index)
+                                                saveMemoryEntries()
                                                 if (expandedMemoryPool == entry.id) {
                                                     expandedMemoryPool = null
                                                 }
@@ -625,7 +621,10 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.height(10.dp))
                                     OutlinedTextField(
                                         value = entry.name,
-                                        onValueChange = { memoryEntries[index] = entry.copy(name = it) },
+                                        onValueChange = {
+                                            memoryEntries[index] = entry.copy(name = it)
+                                            saveMemoryEntries()
+                                        },
                                         label = { Text("Name", color = TextGray) },
                                         modifier = Modifier.fillMaxWidth(),
                                         singleLine = true,
@@ -640,7 +639,10 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.height(8.dp))
                                     OutlinedTextField(
                                         value = entry.value,
-                                        onValueChange = { memoryEntries[index] = entry.copy(value = it) },
+                                        onValueChange = {
+                                            memoryEntries[index] = entry.copy(value = it)
+                                            saveMemoryEntries()
+                                        },
                                         label = { Text("Saved text", color = TextGray) },
                                         placeholder = { Text("Routine or preference...", color = TextGray) },
                                         modifier = Modifier.fillMaxWidth(),
@@ -665,11 +667,7 @@ fun HomeScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        onSavePreferences(
-                            memoryEntries
-                                .filter { it.name.isNotBlank() && it.value.isNotBlank() }
-                                .map { "${it.name.trim()}: ${it.value.trim()}" }
-                        )
+                        saveMemoryEntries()
                         showMemoryDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),

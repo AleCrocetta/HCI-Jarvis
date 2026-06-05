@@ -28,6 +28,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import com.example.calendarapp.model.CalendarEvent
 import com.example.calendarapp.ui.theme.*
 import java.time.LocalDate
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -90,6 +91,7 @@ fun CalendarGrid(
     
     // Sync pagerState -> parentState (when user swipes)
     LaunchedEffect(pagerState.currentPage) {
+        delay(300)
         val targetEpoch = pagerState.currentPage
         val targetYear = targetEpoch / 12
         val targetMonthIndex = targetEpoch % 12
