@@ -54,15 +54,15 @@ private data class MemoryEntry(
 private enum class AiFeedbackState(val label: String) {
     Success("Success"),
     MissingInfo("Missing info"),
-    ClarificationNeeded("Clarification needed")
+    Collision("Collision")
 }
 
 private fun classifyAiFeedback(message: String): AiFeedbackState {
     val normalized = message.lowercase()
     return when {
-        listOf("collides", "overlap", "conflict", "ambiguous", "reply with", "sovrappone", "conflitto", "ambiguo", "chiarire", "rispondi").any { it in normalized } ->
-            AiFeedbackState.ClarificationNeeded
-        listOf("missing", "need", "provide", "details", "date", "time", "manca", "serve", "specifica", "quando", "data", "giorno", "orario", "dettagli").any { it in normalized } ->
+        listOf("collision", "collides", "overlap", "conflict", "sovrappone", "conflitto").any { it in normalized } ->
+            AiFeedbackState.Collision
+        listOf("missing info", "missing", "need", "provide", "details", "date", "time", "manca", "serve", "specifica", "quando", "data", "giorno", "orario", "dettagli").any { it in normalized } ->
             AiFeedbackState.MissingInfo
         else -> AiFeedbackState.Success
     }
@@ -171,7 +171,13 @@ fun HomeScreen(
     userPreferences: List<String>,
     onSavePreferences: (List<String>) -> Unit,
     showFirstRunPreferences: Boolean,
-    onFirstRunPreferencesDone: (List<String>) -> Unit
+    onFirstRunPreferencesDone: (List<String>) -> Unit,
+    pendingCollisionNewEvent: CalendarEvent? = null,
+    pendingCollisionExistingEvent: CalendarEvent? = null,
+    onCancelNewEvent: () -> Unit = {},
+    onKeepBothEvents: () -> Unit = {},
+    onReplaceExistingEvent: () -> Unit = {},
+    onRescheduleExistingEvent: () -> Unit = {}
 ) {
     // Filter events dynamically based on day, month, year and search query
     val filteredEvents = events.filter { event ->
@@ -192,10 +198,26 @@ fun HomeScreen(
     val recentlyDeletedEvents = remember { mutableStateListOf<CalendarEvent>() }
     var showUndoSnackbar by remember { mutableStateOf(false) }
     var undoTimerJob by remember { mutableStateOf<Job?>(null) }
+    var dismissedFeedbackId by remember { mutableStateOf<String?>(null) }
+    var currentFeedbackMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    val latestAiMessage = chatHistory.lastOrNull { !it.isUser }
+
+    LaunchedEffect(latestAiMessage?.id) {
+        if (latestAiMessage != null) {
+            currentFeedbackMessage = latestAiMessage
+            dismissedFeedbackId = null
+        }
+    }
+
+    fun showFeedback(message: String) {
+        currentFeedbackMessage = ChatMessage(text = message, isUser = false)
+        dismissedFeedbackId = null
+    }
 
     val handleEventDeletion: (CalendarEvent) -> Unit = { event ->
         recentlyDeletedEvents.add(event)
         onDeleteEvent(event)
+        showFeedback("Success: deleted ${event.title}.")
         showUndoSnackbar = true
         undoTimerJob?.cancel()
         undoTimerJob = coroutineScope.launch {
@@ -209,13 +231,13 @@ fun HomeScreen(
         recentlyDeletedEvents.reversed().forEach { restoredEvent ->
             onRestoreEvent(restoredEvent)
         }
+        showFeedback("Success: restored ${recentlyDeletedEvents.size} deleted event(s).")
         recentlyDeletedEvents.clear()
         showUndoSnackbar = false
         undoTimerJob?.cancel()
     }
 
     var showMemoryDialog by remember { mutableStateOf(false) }
-    var dismissedFeedbackId by remember { mutableStateOf<String?>(null) }
     
     var showMonthDialog by remember { mutableStateOf(false) }
 
@@ -332,8 +354,14 @@ fun HomeScreen(
                         EventList(
                             events = filteredEvents,
                             onDeleteEvent = handleEventDeletion,
-                            onCompleteEvent = onCompleteEvent,
-                            onEditEvent = onEditEvent,
+                            onCompleteEvent = { event ->
+                                onCompleteEvent(event)
+                                showFeedback("Success: updated ${event.title}.")
+                            },
+                            onEditEvent = { event ->
+                                onEditEvent(event)
+                                showFeedback("Success: updated ${event.title}.")
+                            },
                             highlightedEventId = highlightedEventId
                         )
                     }
@@ -342,9 +370,9 @@ fun HomeScreen(
                 }
             }
 
-            val latestAiMessage = chatHistory.lastOrNull { !it.isUser }
-            if (latestAiMessage != null && dismissedFeedbackId != latestAiMessage.id) {
-                val feedbackState = classifyAiFeedback(latestAiMessage.text)
+            val feedbackMessage = currentFeedbackMessage
+            if (feedbackMessage != null && dismissedFeedbackId != feedbackMessage.id) {
+                val feedbackState = classifyAiFeedback(feedbackMessage.text)
                 Surface(
                     color = White,
                     shape = RoundedCornerShape(16.dp),
@@ -370,7 +398,7 @@ fun HomeScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = latestAiMessage.text,
+                                text = feedbackMessage.text,
                                 color = TextGray,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
@@ -383,10 +411,10 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { dismissedFeedbackId = latestAiMessage.id }
+                                .clickable { dismissedFeedbackId = feedbackMessage.id }
                                 .padding(horizontal = 6.dp, vertical = 4.dp)
                         )
-                        }
+                    }
                 }
             }
 
@@ -456,7 +484,7 @@ fun HomeScreen(
 
     // Memory & Preferences Area Dialog
     if (showMemoryDialog) {
-        val memoryEntries = remember(showMemoryDialog) {
+        val memoryEntries = remember(userPreferences) {
             mutableStateListOf<MemoryEntry>().apply {
                 userPreferences.forEachIndexed { index, preference ->
                     val hasName = preference.contains(":")
@@ -468,7 +496,7 @@ fun HomeScreen(
                 }
             }
         }
-        var expandedMemoryPool by remember(showMemoryDialog) {
+        var expandedMemoryPool by remember(userPreferences) {
             mutableStateOf(memoryEntries.firstOrNull()?.id)
         }
 
@@ -478,6 +506,7 @@ fun HomeScreen(
                     .filter { it.name.isNotBlank() && it.value.isNotBlank() }
                     .map { "${it.name.trim()}: ${it.value.trim()}" }
             )
+            showFeedback("Success: memory updated.")
         }
 
         fun memoryFolder(entry: MemoryEntry): String {
@@ -674,6 +703,55 @@ fun HomeScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Save Memory", color = White, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = White,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (pendingCollisionNewEvent != null && pendingCollisionExistingEvent != null) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Text(
+                    text = "Collision",
+                    color = DarkBlue,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "${pendingCollisionNewEvent.title} (${pendingCollisionNewEvent.time}) overlaps with ${pendingCollisionExistingEvent.title} (${pendingCollisionExistingEvent.time}) on ${pendingCollisionNewEvent.month} ${pendingCollisionNewEvent.day}, ${pendingCollisionNewEvent.year}.",
+                        color = TextGray,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Choose how Jarvis should resolve this collision.",
+                        color = DarkBlue,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            confirmButton = {
+                Column {
+                    TextButton(onClick = onCancelNewEvent) {
+                        Text("Cancel the new event", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = onKeepBothEvents) {
+                        Text("Keep both", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = onReplaceExistingEvent) {
+                        Text("Replace the existing event", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = onRescheduleExistingEvent) {
+                        Text("Reschedule the existing event", color = DarkBlue, fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             containerColor = White,

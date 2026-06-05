@@ -50,7 +50,7 @@ private fun findOverlappingEvent(
             event.month.equals(candidate.month, ignoreCase = true) &&
             event.year == candidate.year &&
             parseEventTimeRange(event.time)?.let { existingRange ->
-                candidateRange.first < existingRange.last && existingRange.first < candidateRange.last
+                candidateRange.first <= existingRange.last && existingRange.first <= candidateRange.last
             } == true
     }
 }
@@ -120,7 +120,8 @@ class JarvisViewModel : ViewModel() {
         userPreferences: List<String> = emptyList(),
         onAddEvent: (CalendarEvent) -> Unit,
         onRemoveEvent: (String) -> Unit,
-        onModifyEvent: (CalendarEvent) -> Unit
+        onModifyEvent: (CalendarEvent) -> Unit,
+        onCollision: (CalendarEvent, CalendarEvent, Boolean) -> Unit = { _, _, _ -> }
     ) {
         // Grab history before adding current message to avoid sending it twice
         val previousHistory = _chatHistory.value
@@ -144,7 +145,7 @@ class JarvisViewModel : ViewModel() {
                 }
 
                 val generativeModel = GenerativeModel(
-                    modelName = "gemini-2.5-flash",
+                    modelName = "gemini-3.5-flash",
                     apiKey = apiKey,
                     tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction))),
                     systemInstruction = content { text(buildSystemInstruction(userPreferences)) }
@@ -168,7 +169,8 @@ class JarvisViewModel : ViewModel() {
                             )
                             val overlap = findOverlappingEvent(event, currentEvents)
                             if (overlap != null) {
-                                responseText = "L'evento ${event.title} si sovrappone con ${overlap.title} (${overlap.time}, ${overlap.month} ${overlap.day}). Vuoi spostare o eliminare uno degli eventi?"
+                                onCollision(event, overlap, false)
+                                responseText = "Collision: ${event.title} (${event.time}) overlaps with ${overlap.title} (${overlap.time}) on ${event.month} ${event.day}, ${event.year}."
                             } else {
                                 onAddEvent(event)
                                 if (responseText.isBlank()) responseText = "Ho creato l'evento: ${event.title}."
@@ -201,7 +203,8 @@ class JarvisViewModel : ViewModel() {
                                 )
                                 val overlap = findOverlappingEvent(modifiedEvent, currentEvents, ignoreEventId = id)
                                 if (overlap != null) {
-                                    responseText = "La modifica di ${modifiedEvent.title} si sovrappone con ${overlap.title} (${overlap.time}, ${overlap.month} ${overlap.day}). Vuoi spostare o eliminare uno degli eventi?"
+                                    onCollision(modifiedEvent, overlap, true)
+                                    responseText = "Collision: ${modifiedEvent.title} (${modifiedEvent.time}) overlaps with ${overlap.title} (${overlap.time}) on ${modifiedEvent.month} ${modifiedEvent.day}, ${modifiedEvent.year}."
                                 } else {
                                     onModifyEvent(modifiedEvent)
                                     if (responseText.isBlank()) responseText = "Ho modificato l'evento: ${modifiedEvent.title}."

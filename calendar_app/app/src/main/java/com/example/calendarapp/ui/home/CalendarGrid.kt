@@ -90,8 +90,10 @@ fun CalendarGrid(
     val coroutineScope = rememberCoroutineScope()
     
     // Sync pagerState -> parentState (when user swipes)
-    LaunchedEffect(pagerState.currentPage) {
+    LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
+        if (pagerState.isScrollInProgress) return@LaunchedEffect
         delay(300)
+        if (pagerState.isScrollInProgress) return@LaunchedEffect
         val targetEpoch = pagerState.currentPage
         val targetYear = targetEpoch / 12
         val targetMonthIndex = targetEpoch % 12
