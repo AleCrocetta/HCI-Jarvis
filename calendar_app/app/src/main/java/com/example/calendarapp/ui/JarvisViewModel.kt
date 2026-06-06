@@ -152,7 +152,11 @@ class JarvisViewModel : ViewModel() {
                 )
                 
                 val chat = generativeModel.startChat(history = historyList)
-                val response = chat.sendMessage(prompt + "\n\n" + contextStr)
+                val response = chat.sendMessage(
+                    prompt +
+                        "\n\nReply in the same language as this user message. If the user message mixes languages, use the dominant language of the user message." +
+                        "\n\n" + contextStr
+                )
 
                 var responseText = response.text ?: ""
 
@@ -173,14 +177,14 @@ class JarvisViewModel : ViewModel() {
                                 responseText = "Collision: ${event.title} (${event.time}) overlaps with ${overlap.title} (${overlap.time}) on ${event.month} ${event.day}, ${event.year}."
                             } else {
                                 onAddEvent(event)
-                                if (responseText.isBlank()) responseText = "Ho creato l'evento: ${event.title}."
+                                if (responseText.isBlank()) responseText = "Created event: ${event.title}."
                             }
                         }
                         "delete_event" -> {
                             val id = call.args["eventId"]?.toString() ?: call.args.values.firstOrNull()?.toString()
                             if (id != null) {
                                 onRemoveEvent(id)
-                                if (responseText.isBlank()) responseText = "Ho eliminato l'evento richiesto."
+                                if (responseText.isBlank()) responseText = "Deleted the requested event."
                             }
                         }
                         "modify_event" -> {
@@ -207,7 +211,7 @@ class JarvisViewModel : ViewModel() {
                                     responseText = "Collision: ${modifiedEvent.title} (${modifiedEvent.time}) overlaps with ${overlap.title} (${overlap.time}) on ${modifiedEvent.month} ${modifiedEvent.day}, ${modifiedEvent.year}."
                                 } else {
                                     onModifyEvent(modifiedEvent)
-                                    if (responseText.isBlank()) responseText = "Ho modificato l'evento: ${modifiedEvent.title}."
+                                    if (responseText.isBlank()) responseText = "Updated event: ${modifiedEvent.title}."
                                 }
                             }
                         }
@@ -220,7 +224,7 @@ class JarvisViewModel : ViewModel() {
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                _chatHistory.value = _chatHistory.value + ChatMessage(text = "Si è verificato un errore: ${e.message}", isUser = false)
+                _chatHistory.value = _chatHistory.value + ChatMessage(text = "An error occurred: ${e.message}", isUser = false)
             }
         }
     }

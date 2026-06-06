@@ -447,6 +447,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    val deletedMemoryEventKeys = remember { mutableStateMapOf<String, Boolean>() }
+
+                    fun memoryDeletionKey(event: CalendarEvent): String {
+                        return "${event.year}:${event.month}:${event.day}"
+                            .lowercase(Locale.US)
+                            .replace(Regex("""[^a-z0-9]+"""), "-")
+                            .trim('-')
+                    }
+
                     fun refreshMemoryEvents(preferences: List<String>, cleanupOldPreferences: List<String>? = null) {
                         cleanupOldPreferences?.let { removeOldUntaggedMemoryEvents(it) }
                         val activeWindow = activeMemoryWindow()
@@ -464,6 +473,7 @@ class MainActivity : ComponentActivity() {
                                 })
                         }
                         generatedEvents.forEach { memoryEvent ->
+                            if (deletedMemoryEventKeys.containsKey(memoryDeletionKey(memoryEvent))) return@forEach
                             val collision = eventsList.any { event ->
                                 !event.id.startsWith("memory:") &&
                                     event.day == memoryEvent.day &&
@@ -607,6 +617,17 @@ class MainActivity : ComponentActivity() {
                         selectedMonth = event.month
                         selectedYear = event.year
                         viewAllEvents = false
+                    }
+
+                    fun showEventCollision(newEvent: CalendarEvent, conflictingEvent: CalendarEvent, isModification: Boolean) {
+                        pendingEventCollision = PendingEventCollision(newEvent, conflictingEvent, isModification)
+                        selectedDay = newEvent.day
+                        selectedDayMonth = newEvent.month
+                        selectedDayYear = newEvent.year
+                        selectedMonth = newEvent.month
+                        selectedYear = newEvent.year
+                        viewAllEvents = false
+                        navController.popBackStack("home", false)
                     }
 
                     fun findConflictingEvent(candidate: CalendarEvent, ignoreEventId: String? = null): CalendarEvent? {
@@ -767,7 +788,10 @@ class MainActivity : ComponentActivity() {
                                 "replace" -> {
                                     eventsList.removeAll { it.id == memoryProposal.conflictingEvent.id }
                                     applyPreferences(memoryProposal.preferences)
-                                    eventsList.firstOrNull { it.id == memoryProposal.routineEvent.id }?.let { focusEvent(it) }
+                                    if (eventsList.none { it.id == memoryProposal.routineEvent.id }) {
+                                        eventsList.add(memoryProposal.routineEvent)
+                                    }
+                                    focusEvent(memoryProposal.routineEvent)
                                     pendingMemoryCollision = null
                                     pendingEventCollision = null
                                     jarvisViewModel.addLocalAssistantMessage("Success: replaced ${memoryProposal.conflictingEvent.title} with ${memoryProposal.routine.title}.")
@@ -782,7 +806,10 @@ class MainActivity : ComponentActivity() {
                                         val index = eventsList.indexOfFirst { it.id == moved.id }
                                         if (index != -1) eventsList[index] = moved
                                         applyPreferences(memoryProposal.preferences)
-                                        eventsList.firstOrNull { it.id == memoryProposal.routineEvent.id }?.let { focusEvent(it) }
+                                        if (eventsList.none { it.id == memoryProposal.routineEvent.id }) {
+                                            eventsList.add(memoryProposal.routineEvent)
+                                        }
+                                        focusEvent(memoryProposal.routineEvent)
                                         pendingMemoryCollision = null
                                         pendingEventCollision = null
                                         jarvisViewModel.addLocalAssistantMessage("Success: saved ${memoryProposal.routine.title} and rescheduled ${moved.title} to ${moved.time}.")
@@ -930,7 +957,7 @@ class MainActivity : ComponentActivity() {
                         val proposal = firstRoutineCollision(routine, preferences)
                         if (proposal != null) {
                             pendingMemoryCollision = proposal
-                            pendingEventCollision = PendingEventCollision(proposal.routineEvent, proposal.conflictingEvent, false)
+                            showEventCollision(proposal.routineEvent, proposal.conflictingEvent, false)
                         } else {
                             applyPreferences(preferences)
                             jarvisViewModel.addLocalAssistantMessage("Updated memory: ${routine.value}. I loaded matching routine events into the current timeline window.")
@@ -964,7 +991,7 @@ class MainActivity : ComponentActivity() {
                                 saveEventToCalendar(modifiedEvent, true)
                             },
                             onCollision = { newEvent, conflictingEvent, isModification ->
-                                pendingEventCollision = PendingEventCollision(newEvent, conflictingEvent, isModification)
+                                showEventCollision(newEvent, conflictingEvent, isModification)
                             }
                         )
                     }
@@ -992,6 +1019,9 @@ class MainActivity : ComponentActivity() {
                                 onDeleteEvent = { event ->
                                     val index = eventsList.indexOfFirst { it.id == event.id }
                                     if (index != -1) {
+                                        if (event.id.startsWith("memory:")) {
+                                            deletedMemoryEventKeys[memoryDeletionKey(event)] = true
+                                        }
                                         deletedEventIndices[event.id] = index
                                         eventsList.removeAt(index)
                                     }
@@ -1002,6 +1032,9 @@ class MainActivity : ComponentActivity() {
                                         eventsList.add(originalIndex, event)
                                     } else {
                                         eventsList.add(event)
+                                    }
+                                    if (event.id.startsWith("memory:")) {
+                                        deletedMemoryEventKeys.remove(memoryDeletionKey(event))
                                     }
                                     deletedEventIndices.remove(event.id)
                                 },
@@ -1017,7 +1050,7 @@ class MainActivity : ComponentActivity() {
                                         val oldEvent = eventsList[index]
                                         val conflict = findConflictingEvent(event, ignoreEventId = event.id)
                                         if (conflict != null) {
-                                            pendingEventCollision = PendingEventCollision(event, conflict, true)
+                                            showEventCollision(event, conflict, true)
                                         } else if (!syncRoutineRename(oldEvent, event.title)) {
                                             eventsList[index] = event
                                             highlightedEventId = event.id
@@ -1091,15 +1124,11 @@ class MainActivity : ComponentActivity() {
                                     )
                                     val conflict = findConflictingEvent(newEvent)
                                     if (conflict != null) {
-                                        pendingEventCollision = PendingEventCollision(newEvent, conflict, false)
-                                        selectedDay = chosenDay
-                                        selectedDayMonth = selectedMonth
-                                        selectedDayYear = year
-                                        selectedYear = year
+                                        showEventCollision(newEvent, conflict, false)
                                     } else {
                                         saveEventToCalendar(newEvent, false)
+                                        navController.popBackStack()
                                     }
-                                    navController.popBackStack()
                                 },
                                 onBack = {
                                     navController.popBackStack()

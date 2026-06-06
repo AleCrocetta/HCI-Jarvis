@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -53,8 +52,9 @@ private data class MemoryEntry(
 
 private enum class AiFeedbackState(val label: String) {
     Success("Success"),
+    MemoryUpdate("Memory update"),
     MissingInfo("Missing info"),
-    Collision("Collision")
+    Collision("Conflict")
 }
 
 private fun classifyAiFeedback(message: String): AiFeedbackState {
@@ -62,6 +62,8 @@ private fun classifyAiFeedback(message: String): AiFeedbackState {
     return when {
         listOf("collision", "collides", "overlap", "conflict", "sovrappone", "conflitto").any { it in normalized } ->
             AiFeedbackState.Collision
+        listOf("memory updated", "memory update").any { it in normalized } ->
+            AiFeedbackState.MemoryUpdate
         listOf("missing info", "missing", "need", "provide", "details", "date", "time", "manca", "serve", "specifica", "quando", "data", "giorno", "orario", "dettagli").any { it in normalized } ->
             AiFeedbackState.MissingInfo
         else -> AiFeedbackState.Success
@@ -217,7 +219,6 @@ fun HomeScreen(
     val handleEventDeletion: (CalendarEvent) -> Unit = { event ->
         recentlyDeletedEvents.add(event)
         onDeleteEvent(event)
-        showFeedback("Success: deleted ${event.title}.")
         showUndoSnackbar = true
         undoTimerJob?.cancel()
         undoTimerJob = coroutineScope.launch {
@@ -356,7 +357,6 @@ fun HomeScreen(
                             onDeleteEvent = handleEventDeletion,
                             onCompleteEvent = { event ->
                                 onCompleteEvent(event)
-                                showFeedback("Success: updated ${event.title}.")
                             },
                             onEditEvent = { event ->
                                 onEditEvent(event)
@@ -370,7 +370,15 @@ fun HomeScreen(
             }
 
             val feedbackMessage = currentFeedbackMessage
-            if (feedbackMessage != null && dismissedFeedbackId != feedbackMessage.id && pendingCollisionNewEvent == null) {
+            LaunchedEffect(feedbackMessage?.id) {
+                val message = feedbackMessage ?: return@LaunchedEffect
+                if (classifyAiFeedback(message.text) != AiFeedbackState.Collision) {
+                    delay(6000)
+                    dismissedFeedbackId = message.id
+                }
+            }
+
+            if (feedbackMessage != null && dismissedFeedbackId != feedbackMessage.id) {
                 val feedbackState = classifyAiFeedback(feedbackMessage.text)
                 Surface(
                     color = White,
@@ -409,6 +417,27 @@ fun HomeScreen(
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             )
+                            if (feedbackState == AiFeedbackState.Collision && pendingCollisionNewEvent != null) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = onRescheduleExistingEvent,
+                                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Reschedule", color = White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = onKeepBothEvents,
+                                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Same hour", color = White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
                         }
                         Text(
                             text = "Dismiss",
@@ -638,7 +667,6 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .clickable {
                                                 memoryEntries.removeAt(index)
-                                                saveMemoryEntries()
                                                 if (expandedMemoryPool == entry.id) {
                                                     expandedMemoryPool = null
                                                 }
@@ -652,7 +680,6 @@ fun HomeScreen(
                                         value = entry.name,
                                         onValueChange = {
                                             memoryEntries[index] = entry.copy(name = it)
-                                            saveMemoryEntries()
                                         },
                                         label = { Text("Name", color = TextGray) },
                                         modifier = Modifier.fillMaxWidth(),
@@ -670,7 +697,6 @@ fun HomeScreen(
                                         value = entry.value,
                                         onValueChange = {
                                             memoryEntries[index] = entry.copy(value = it)
-                                            saveMemoryEntries()
                                         },
                                         label = { Text("Saved text", color = TextGray) },
                                         placeholder = { Text("Routine or preference...", color = TextGray) },
@@ -706,92 +732,6 @@ fun HomeScreen(
                 }
             },
             containerColor = White,
-            shape = RoundedCornerShape(24.dp)
-        )
-    }
-
-    if (pendingCollisionNewEvent != null && pendingCollisionExistingEvent != null) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = {
-                Surface(
-                    color = Color(0xFFFFB300),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Collision warning",
-                            tint = Color(0xFF5D3500),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Text(
-                            text = "Scheduling conflict",
-                            color = Color(0xFF5D3500),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                    }
-                }
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "${pendingCollisionNewEvent.title} (${pendingCollisionNewEvent.time}) overlaps with ${pendingCollisionExistingEvent.title} (${pendingCollisionExistingEvent.time}) on ${pendingCollisionNewEvent.month} ${pendingCollisionNewEvent.day}, ${pendingCollisionNewEvent.year}.",
-                        color = Color(0xFF5D3500),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Choose how Jarvis should resolve this collision.",
-                        color = Color(0xFF5D3500),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            },
-            confirmButton = {
-                Column {
-                    Button(
-                        onClick = onCancelNewEvent,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8D1B1B)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Cancel the new event", color = White, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = onKeepBothEvents,
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Keep both", color = White, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = onReplaceExistingEvent,
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Replace the existing event", color = White, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = onRescheduleExistingEvent,
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Reschedule the existing event", color = White, fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            containerColor = Color(0xFFFFF8E1),
             shape = RoundedCornerShape(24.dp)
         )
     }
