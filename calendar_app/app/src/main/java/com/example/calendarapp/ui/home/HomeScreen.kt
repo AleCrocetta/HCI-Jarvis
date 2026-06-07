@@ -1,6 +1,7 @@
 package com.example.calendarapp.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -17,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -239,6 +245,11 @@ fun HomeScreen(
     }
 
     var showMemoryDialog by remember { mutableStateOf(false) }
+    var showJarvisChat by remember { mutableStateOf(false) }
+    var jarvisChatText by remember { mutableStateOf("") }
+    var submittedFromJarvisChat by remember { mutableStateOf(false) }
+    var focusedEventIdBeforeJarvisSubmit by remember { mutableStateOf<String?>(null) }
+    var latestMessageIdWhenJarvisOpened by remember { mutableStateOf<String?>(null) }
     
     var showMonthDialog by remember { mutableStateOf(false) }
 
@@ -267,13 +278,107 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(highlightedEventId, latestAiMessage?.id) {
+        val latestMessage = latestAiMessage ?: return@LaunchedEffect
+        if (!showJarvisChat || !submittedFromJarvisChat) return@LaunchedEffect
+        val focusedNewEvent = highlightedEventId != null && highlightedEventId != focusedEventIdBeforeJarvisSubmit
+        val sameEventUpdated = highlightedEventId != null &&
+            latestMessage.id != latestMessageIdWhenJarvisOpened &&
+            listOf("created event", "updated event").any { it in latestMessage.text.lowercase() }
+        if (focusedNewEvent || sameEventUpdated) {
+            showJarvisChat = false
+            submittedFromJarvisChat = false
+            latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+        }
+    }
+
     Scaffold(
         bottomBar = {
-            JarvisBottomBar(
-                onSendClick = onSendClick,
-                onMicClick = onMicClick,
-                onBrainClick = { showMemoryDialog = true }
-            )
+            val secondaryButtonColor = Color(0xFFF4F8FF)
+            val secondaryButtonBorder = Color(0xFF2979FF).copy(alpha = 0.22f)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .height(84.dp)
+                    .padding(bottom = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 24.dp)
+                        .size(52.dp)
+                        .shadow(6.dp, CircleShape, spotColor = DarkBlue.copy(alpha = 0.08f))
+                        .clip(CircleShape)
+                        .background(secondaryButtonColor)
+                        .border(1.dp, secondaryButtonBorder, CircleShape)
+                        .clickable { showMemoryDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Psychology,
+                        contentDescription = "Memory Preferences",
+                        tint = Color(0xFF2979FF),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(76.dp)
+                        .shadow(12.dp, CircleShape, spotColor = DarkBlue.copy(alpha = 0.18f))
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF2979FF),
+                                    Color(0xFF00E5FF)
+                                )
+                            )
+                        )
+                        .clickable {
+                            latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+                            submittedFromJarvisChat = false
+                            showJarvisChat = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Ask Jarvis",
+                        tint = White,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 24.dp)
+                        .size(52.dp)
+                        .shadow(6.dp, CircleShape, spotColor = DarkBlue.copy(alpha = 0.08f))
+                        .clip(CircleShape)
+                        .background(secondaryButtonColor)
+                        .border(1.dp, secondaryButtonBorder, CircleShape)
+                        .clickable {
+                            latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+                            focusedEventIdBeforeJarvisSubmit = highlightedEventId
+                            submittedFromJarvisChat = true
+                            showJarvisChat = true
+                            onMicClick()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Voice Input",
+                        tint = Color(0xFF2979FF),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         },
         containerColor = White
     ) { paddingValues ->
@@ -511,6 +616,172 @@ fun HomeScreen(
                                 letterSpacing = 0.5.sp
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showJarvisChat) {
+        fun submitJarvisPrompt() {
+            val prompt = jarvisChatText.trim()
+            if (prompt.isBlank()) return
+            focusedEventIdBeforeJarvisSubmit = highlightedEventId
+            submittedFromJarvisChat = true
+            onSendClick(prompt)
+            jarvisChatText = ""
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = {
+                showJarvisChat = false
+                submittedFromJarvisChat = false
+            },
+            containerColor = White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .imePadding()
+            ) {
+                Text(
+                    text = "Ask Jarvis",
+                    color = DarkBlue,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Ask Jarvis to add an event, save a routine, or arrange your tasks.",
+                    color = TextGray,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp, max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val visibleMessages = latestMessageIdWhenJarvisOpened?.let { markerId ->
+                        val markerIndex = chatHistory.indexOfFirst { it.id == markerId }
+                        if (markerIndex == -1) emptyList() else chatHistory.drop(markerIndex + 1)
+                    } ?: chatHistory
+                    val recentMessages = visibleMessages.takeLast(8)
+                    if (recentMessages.isNotEmpty()) {
+                        recentMessages.forEach { message ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+                            ) {
+                                Surface(
+                                    color = if (message.isUser) DarkBlue else LightGrayBg,
+                                    shape = RoundedCornerShape(18.dp),
+                                    modifier = Modifier.widthIn(max = 320.dp)
+                                ) {
+                                    Text(
+                                        text = message.text,
+                                        color = if (message.isUser) White else DarkBlue,
+                                        fontSize = 13.sp,
+                                        lineHeight = 17.sp,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = jarvisChatText,
+                        onValueChange = { jarvisChatText = it },
+                        placeholder = {
+                            Text(
+                                text = "Ask Jarvis...",
+                                color = TextGray,
+                                fontSize = 14.sp
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DarkBlue.copy(alpha = 0.4f),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = LightGrayBg,
+                            unfocusedContainerColor = LightGrayBg
+                        ),
+                        shape = RoundedCornerShape(22.dp),
+                        singleLine = true
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        Color(0xFF2979FF),
+                                        Color(0xFF00E5FF)
+                                    )
+                                )
+                            )
+                            .clickable {
+                                focusedEventIdBeforeJarvisSubmit = highlightedEventId
+                                submittedFromJarvisChat = true
+                                onMicClick()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Voice Input",
+                            tint = White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (jarvisChatText.isNotBlank()) {
+                                    Brush.linearGradient(
+                                        colors = listOf(
+                                            Color(0xFF2979FF),
+                                            Color(0xFF00E5FF)
+                                        )
+                                    )
+                                } else {
+                                    Brush.linearGradient(
+                                        colors = listOf(
+                                            LightGrayBg,
+                                            LightGrayBg
+                                        )
+                                    )
+                                }
+                            )
+                            .clickable(enabled = jarvisChatText.isNotBlank()) { submitJarvisPrompt() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = "Send Text",
+                            tint = if (jarvisChatText.isNotBlank()) White else TextGray
+                        )
                     }
                 }
             }
