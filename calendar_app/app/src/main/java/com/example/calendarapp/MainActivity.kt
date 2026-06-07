@@ -85,15 +85,6 @@ class MainActivity : ComponentActivity() {
                     val currentMonth = remember { calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.ENGLISH) ?: "May" }
                     val currentYear = remember { calendar.get(Calendar.YEAR) }
 
-                    // Dynamically compute the month and year for "next month" to pre-populate heatmap data
-                    val nextMonthCalendar = remember {
-                        Calendar.getInstance().apply {
-                            add(Calendar.MONTH, 1)
-                        }
-                    }
-                    val nextMonth = remember { nextMonthCalendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.ENGLISH) ?: "June" }
-                    val nextMonthYear = remember { nextMonthCalendar.get(Calendar.YEAR) }
-                    
                     var selectedDay by remember { mutableIntStateOf(currentDay) }
                     var selectedDayMonth by remember { mutableStateOf(currentMonth) }
                     var selectedDayYear by remember { mutableIntStateOf(currentYear) }
@@ -110,11 +101,6 @@ class MainActivity : ComponentActivity() {
                         mutableStateListOf<String>().apply {
                             if (savedPreferences.isNotBlank()) {
                                 addAll(savedPreferences.lines().filter { it.isNotBlank() })
-                            } else {
-                                add("Schedule training in the morning")
-                                add("Gym sessions at 8:00 AM")
-                                add("Meetings must have video link")
-                                add("Highlight flight events with indicator")
                             }
                         }
                     }
@@ -126,52 +112,7 @@ class MainActivity : ComponentActivity() {
                     }
                     
                     val eventsList = remember {
-                        mutableStateListOf<CalendarEvent>(
-                            CalendarEvent(day = currentDay, month = currentMonth, year = currentYear, title = "MORNING WALK", time = "06:30 AM - 07:00 AM"),
-                            CalendarEvent(day = currentDay, month = currentMonth, year = currentYear, title = "GYM TIME", time = "08:00 AM - 09:20 AM"),
-                            CalendarEvent(day = currentDay, month = currentMonth, year = currentYear, title = "PILOTS MEETING", time = "10:00 AM - 10:30 AM", link = "https://meet.google.com/abc-xyz", fileNames = listOf("MeetingAgenda.pdf")),
-                            CalendarEvent(day = if (currentDay > 2) currentDay - 2 else 28, month = currentMonth, year = currentYear, title = "DOCTOR APPOINTMENT", time = "11:00 AM - 12:00 PM"),
-                            CalendarEvent(day = if (currentDay < 23) currentDay + 5 else 3, month = currentMonth, year = currentYear, title = "PROJECT SPRINT REVIEW", time = "03:00 PM - 04:30 PM", link = "https://zoom.us/j/sprint-123", fileNames = listOf("SprintBacklog.xlsx")),
-                            CalendarEvent(day = if (currentDay < 19) currentDay + 9 else 5, month = currentMonth, year = currentYear, title = "FLIGHT TO NEW YORK", time = "02:00 PM - 06:00 PM", link = "https://flightstatus.com/NYC-778", fileNames = listOf("BoardingPass.pdf", "TicketDetails.txt")),
-                            CalendarEvent(day = 15, month = "January", year = currentYear, title = "NEW YEAR PLANNING", time = "10:00 AM - 11:30 AM"),
-                            CalendarEvent(day = 10, month = "March", year = currentYear, title = "SPRING CLEANING", time = "09:00 AM - 12:00 PM"),
-
-                            // pre-populate next month with varying counts of tasks to verify calendar heatmap colors
-                            // Day 2: 1 task (tests the yellow heatmap: size 1-2)
-                            CalendarEvent(day = 2, month = nextMonth, year = nextMonthYear, title = "PREPARE REPORT", time = "09:00 AM - 10:00 AM"),
-
-                            // Day 5: 2 tasks (tests the yellow heatmap: size 1-2)
-                            CalendarEvent(day = 5, month = nextMonth, year = nextMonthYear, title = "DENTIST APPOINTMENT", time = "10:30 AM - 11:30 AM"),
-                            CalendarEvent(day = 5, month = nextMonth, year = nextMonthYear, title = "GROCERY SHOPPING", time = "05:00 PM - 06:00 PM"),
-
-                            // Day 10: 3 tasks (tests the orange heatmap: size 3-5)
-                            CalendarEvent(day = 10, month = nextMonth, year = nextMonthYear, title = "TEAM SYNC", time = "09:00 AM - 09:30 AM"),
-                            CalendarEvent(day = 10, month = nextMonth, year = nextMonthYear, title = "CLIENT DEMO", time = "11:00 AM - 12:00 PM"),
-                            CalendarEvent(day = 10, month = nextMonth, year = nextMonthYear, title = "STRATEGY MEETING", time = "02:00 PM - 03:00 PM"),
-
-                            // Day 15: 4 tasks (tests the orange heatmap: size 3-5)
-                            CalendarEvent(day = 15, month = nextMonth, year = nextMonthYear, title = "CODE REVIEW", time = "10:00 AM - 11:00 AM"),
-                            CalendarEvent(day = 15, month = nextMonth, year = nextMonthYear, title = "1ON1 WITH MANAGER", time = "01:30 PM - 02:00 PM"),
-                            CalendarEvent(day = 15, month = nextMonth, year = nextMonthYear, title = "PRODUCT LAUNCH PLAN", time = "03:00 PM - 04:00 PM"),
-                            CalendarEvent(day = 15, month = nextMonth, year = nextMonthYear, title = "FITNESS HOUR", time = "06:00 PM - 07:00 PM"),
-
-                            // Day 20: 6 tasks (tests the red heatmap: size > 5)
-                            CalendarEvent(day = 20, month = nextMonth, year = nextMonthYear, title = "BREAKFAST WITH TEAM", time = "08:00 AM - 09:00 AM"),
-                            CalendarEvent(day = 20, month = nextMonth, year = nextMonthYear, title = "DESIGN THINKING WORKSHOP", time = "10:00 AM - 12:00 PM"),
-                            CalendarEvent(day = 20, month = nextMonth, year = nextMonthYear, title = "LUNCH WITH PARTNER", time = "12:30 PM - 01:30 PM"),
-                            CalendarEvent(day = 20, month = nextMonth, year = nextMonthYear, title = "MARKETING REVIEW", time = "02:00 PM - 03:00 PM"),
-                            CalendarEvent(day = 20, month = nextMonth, year = nextMonthYear, title = "HR BRIEFING", time = "03:30 PM - 04:00 PM"),
-                            CalendarEvent(day = 20, month = nextMonth, year = nextMonthYear, title = "YOGA SESSION", time = "05:30 PM - 06:30 PM"),
-
-                            // Day 25: 7 tasks (tests the red heatmap: size > 5)
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "MORNING RUN", time = "07:00 AM - 07:45 AM"),
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "STANDUP MEETING", time = "09:30 AM - 09:45 AM"),
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "ARCHITECTURE REVIEW", time = "10:00 AM - 11:30 AM"),
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "LUNCH AND LEARN", time = "12:00 PM - 01:00 PM"),
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "BUG BASH", time = "01:30 PM - 03:30 PM"),
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "STAKEHOLDER SYNC", time = "04:00 PM - 04:30 PM"),
-                            CalendarEvent(day = 25, month = nextMonth, year = nextMonthYear, title = "DINNER MEETING", time = "07:30 PM - 09:00 PM")
-                        )
+                        mutableStateListOf<CalendarEvent>()
                     }
                     val monthsList = listOf(
                         "January", "February", "March", "April", "May", "June",

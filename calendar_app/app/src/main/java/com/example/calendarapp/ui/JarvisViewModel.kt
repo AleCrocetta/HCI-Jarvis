@@ -58,6 +58,8 @@ private fun findOverlappingEvent(
 class JarvisViewModel : ViewModel() {
     
     private val apiKey = com.example.calendarapp.BuildConfig.GEMINI_API_KEY
+    private val primaryModelName = "gemini-3.5-flash"
+    private val fallbackModelName = "gemini-2.5-flash"
 
     private val _chatHistory = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatHistory: StateFlow<List<ChatMessage>> = _chatHistory.asStateFlow()
@@ -114,6 +116,14 @@ class JarvisViewModel : ViewModel() {
         }
     }
 
+    private fun shouldUseFallback(error: Exception): Boolean {
+        val errorText = "${error::class.simpleName} ${error.message}".lowercase()
+        return errorText.contains("quota") ||
+            errorText.contains("rate") ||
+            errorText.contains("resource_exhausted") ||
+            errorText.contains("429")
+    }
+
     fun handleUserPrompt(
         prompt: String,
         currentEvents: List<CalendarEvent>,
@@ -144,19 +154,24 @@ class JarvisViewModel : ViewModel() {
                     }
                 }
 
-                val generativeModel = GenerativeModel(
-                    modelName = "gemini-3.5-flash",
+                val tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction)))
+                val systemInstruction = content { text(buildSystemInstruction(userPreferences)) }
+                val message = prompt +
+                    "\n\nReply in the same language as this user message. If the user message mixes languages, use the dominant language of the user message." +
+                    "\n\n" + contextStr
+
+                suspend fun sendToModel(modelName: String) = GenerativeModel(
+                    modelName = modelName,
                     apiKey = apiKey,
-                    tools = listOf(Tool(listOf(createEventFunction, deleteEventFunction, modifyEventFunction))),
-                    systemInstruction = content { text(buildSystemInstruction(userPreferences)) }
-                )
-                
-                val chat = generativeModel.startChat(history = historyList)
-                val response = chat.sendMessage(
-                    prompt +
-                        "\n\nReply in the same language as this user message. If the user message mixes languages, use the dominant language of the user message." +
-                        "\n\n" + contextStr
-                )
+                    tools = tools,
+                    systemInstruction = systemInstruction
+                ).startChat(history = historyList).sendMessage(message)
+
+                val response = try {
+                    sendToModel(primaryModelName)
+                } catch (e: Exception) {
+                    if (shouldUseFallback(e)) sendToModel(fallbackModelName) else throw e
+                }
 
                 var responseText = response.text ?: ""
 
