@@ -224,7 +224,7 @@ fun CalendarMonthGrid(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 0.dp),
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 for (col in 0..6) {

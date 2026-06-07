@@ -202,6 +202,17 @@ fun HomeScreen(
     val isSearching = searchQuery.isNotBlank()
     val focusManager = LocalFocusManager.current
 
+    val handleTodayClick = {
+        val today = java.util.Calendar.getInstance()
+        val todayDay = today.get(java.util.Calendar.DAY_OF_MONTH)
+        val todayMonth = today.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.ENGLISH) ?: selectedMonth
+        val todayYear = today.get(java.util.Calendar.YEAR)
+        onDaySelected(todayDay, todayMonth, todayYear)
+        onMonthSelected(todayMonth)
+        onYearSelected(todayYear)
+        onViewAllChanged(false)
+    }
+
     val coroutineScope = rememberCoroutineScope()
     val recentlyDeletedEvents = remember { mutableStateListOf<CalendarEvent>() }
     var showUndoSnackbar by remember { mutableStateOf(false) }
@@ -406,16 +417,7 @@ fun HomeScreen(
                             selectedMonth = selectedMonth,
                             selectedYear = selectedYear,
                             onMonthClick = { showMonthDialog = true },
-                            onTodayClick = {
-                                val today = java.util.Calendar.getInstance()
-                                val todayDay = today.get(java.util.Calendar.DAY_OF_MONTH)
-                                val todayMonth = today.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.ENGLISH) ?: selectedMonth
-                                val todayYear = today.get(java.util.Calendar.YEAR)
-                                onDaySelected(todayDay, todayMonth, todayYear)
-                                onMonthSelected(todayMonth)
-                                onYearSelected(todayYear)
-                                onViewAllChanged(false)
-                            },
+                            onTodayClick = handleTodayClick,
                             searchQuery = searchQuery,
                             onSearchQueryChanged = onSearchQueryChanged
                         )
