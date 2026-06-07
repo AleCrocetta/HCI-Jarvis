@@ -3,8 +3,11 @@ package com.example.calendarapp.ui.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -149,7 +153,7 @@ private fun SearchResultsPanel(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     selectedDay: Int,
@@ -319,7 +323,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .padding(start = 24.dp)
-                        .size(52.dp)
+                        .size(48.dp)
                         .shadow(6.dp, CircleShape, spotColor = DarkBlue.copy(alpha = 0.08f))
                         .clip(CircleShape)
                         .background(secondaryButtonColor)
@@ -331,14 +335,14 @@ fun HomeScreen(
                         imageVector = Icons.Outlined.Psychology,
                         contentDescription = "Memory Preferences",
                         tint = Color(0xFF2979FF),
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
                 Box(
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .size(76.dp)
+                        .size(68.dp)
                         .shadow(12.dp, CircleShape, spotColor = DarkBlue.copy(alpha = 0.18f))
                         .clip(CircleShape)
                         .background(
@@ -360,7 +364,7 @@ fun HomeScreen(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Ask Jarvis",
                         tint = White,
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(36.dp)
                     )
                 }
 
@@ -368,7 +372,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 24.dp)
-                        .size(52.dp)
+                        .size(48.dp)
                         .shadow(6.dp, CircleShape, spotColor = DarkBlue.copy(alpha = 0.08f))
                         .clip(CircleShape)
                         .background(secondaryButtonColor)
@@ -386,7 +390,7 @@ fun HomeScreen(
                         imageVector = Icons.Default.Mic,
                         contentDescription = "Voice Input",
                         tint = Color(0xFF2979FF),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -635,6 +639,8 @@ fun HomeScreen(
     }
 
     if (showJarvisChat) {
+        val chatInputBringIntoViewRequester = remember { BringIntoViewRequester() }
+
         fun submitJarvisPrompt() {
             val prompt = jarvisChatText.trim()
             if (prompt.isBlank()) return
@@ -655,7 +661,6 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
-                    .imePadding()
             ) {
                 Text(
                     text = "Ask Jarvis",
@@ -713,6 +718,9 @@ fun HomeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .bringIntoViewRequester(chatInputBringIntoViewRequester)
+                        .imePadding()
+                        .navigationBarsPadding()
                         .padding(bottom = 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -727,7 +735,16 @@ fun HomeScreen(
                                 fontSize = 14.sp
                             )
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .onFocusChanged { focusState ->
+                                if (focusState.isFocused) {
+                                    coroutineScope.launch {
+                                        delay(300)
+                                        chatInputBringIntoViewRequester.bringIntoView()
+                                    }
+                                }
+                            },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = DarkBlue.copy(alpha = 0.4f),
                             unfocusedBorderColor = Color.Transparent,

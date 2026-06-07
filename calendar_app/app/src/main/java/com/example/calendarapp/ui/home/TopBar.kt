@@ -73,7 +73,6 @@ fun TopBar(
                     horizontalAlignment = Alignment.Start,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Month Pill
                     Surface(
                         color = Color.White,
                         shape = CircleShape,
@@ -101,7 +100,6 @@ fun TopBar(
                         }
                     }
 
-                    // Today Button
                     Surface(
                         color = Color.White,
                         shape = CircleShape,
