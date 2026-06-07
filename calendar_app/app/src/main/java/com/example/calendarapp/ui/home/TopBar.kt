@@ -26,10 +26,12 @@ fun TopBar(
     selectedMonth: String,
     selectedYear: Int,
     onMonthClick: () -> Unit,
+    onTodayClick: () -> Unit,
     searchQuery: String,
     onSearchQueryChanged: (String) -> Unit
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
+    val todayDay = remember { java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH) }
 
     Row(
         modifier = Modifier
@@ -64,29 +66,47 @@ fun TopBar(
                 shape = CircleShape
             )
         } else {
-            // Month Pill
-            Surface(
-                color = LightBlueBg,
-                shape = CircleShape,
-                modifier = Modifier.clickable { onMonthClick() }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = LightBlueBg,
+                    shape = CircleShape,
+                    modifier = Modifier.clickable { onTodayClick() }
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.CalendarToday,
-                        contentDescription = "Calendar",
-                        tint = TextGray,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "$selectedMonth $selectedYear",
+                        text = todayDay.toString(),
                         color = DarkBlue,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp)
                     )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Month Pill
+                Surface(
+                    color = LightBlueBg,
+                    shape = CircleShape,
+                    modifier = Modifier.clickable { onMonthClick() }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CalendarToday,
+                            contentDescription = "Calendar",
+                            tint = TextGray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "$selectedMonth $selectedYear",
+                            color = DarkBlue,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp
+                        )
+                    }
                 }
             }
             

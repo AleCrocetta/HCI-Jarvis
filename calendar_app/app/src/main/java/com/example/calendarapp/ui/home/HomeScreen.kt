@@ -406,6 +406,16 @@ fun HomeScreen(
                             selectedMonth = selectedMonth,
                             selectedYear = selectedYear,
                             onMonthClick = { showMonthDialog = true },
+                            onTodayClick = {
+                                val today = java.util.Calendar.getInstance()
+                                val todayDay = today.get(java.util.Calendar.DAY_OF_MONTH)
+                                val todayMonth = today.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.ENGLISH) ?: selectedMonth
+                                val todayYear = today.get(java.util.Calendar.YEAR)
+                                onDaySelected(todayDay, todayMonth, todayYear)
+                                onMonthSelected(todayMonth)
+                                onYearSelected(todayYear)
+                                onViewAllChanged(false)
+                            },
                             searchQuery = searchQuery,
                             onSearchQueryChanged = onSearchQueryChanged
                         )
