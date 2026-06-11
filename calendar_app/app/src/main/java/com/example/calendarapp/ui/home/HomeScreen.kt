@@ -191,7 +191,6 @@ fun HomeScreen(
     onReplaceExistingEvent: () -> Unit = {},
     onRescheduleExistingEvent: () -> Unit = {}
 ) {
-    // Filter events dynamically based on day, month, year and search query
     val filteredEvents = events.filter { event ->
         val yearMatches = event.year == selectedYear
         val monthMatches = event.month.equals(selectedMonth, ignoreCase = true)
@@ -243,7 +242,7 @@ fun HomeScreen(
         showUndoSnackbar = true
         undoTimerJob?.cancel()
         undoTimerJob = coroutineScope.launch {
-            delay(4000) // 4 seconds delay
+            delay(4000)
             recentlyDeletedEvents.clear()
             showUndoSnackbar = false
         }
@@ -406,7 +405,6 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
             ) {
-                // Top Section with Calendar (White background, shadow at the bottom)
                 Surface(
                     color = White,
                     shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
@@ -459,7 +457,6 @@ fun HomeScreen(
                     }
                 }
                 
-                // Bottom Section with Events (scrollable, locked to proportion!)
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -486,7 +483,7 @@ fun HomeScreen(
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp)) // Padding at bottom of event list
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
 
@@ -574,7 +571,6 @@ fun HomeScreen(
                 }
             }
 
-            // Beautiful Undo Banner!
             AnimatedVisibility(
                 visible = showUndoSnackbar,
                 enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(
@@ -623,7 +619,7 @@ fun HomeScreen(
                         
                         TextButton(
                             onClick = handleUndoDelete,
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784)) // Sleek premium green for undo
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
                         ) {
                             Text(
                                 text = "UNDO",
@@ -653,15 +649,9 @@ fun HomeScreen(
                 showJarvisChat = false
                 submittedFromJarvisChat = false
             },
-            containerColor = White,
-            windowInsets = WindowInsets(0, 0, 0, 0)
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = White
         ) {
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            val imeBottom = WindowInsets.ime.getBottom(density)
-            val navBottom = WindowInsets.navigationBars.getBottom(density)
-            val keyboardHeight = with(density) { (imeBottom - navBottom).coerceAtLeast(0).toDp() }
-            val navBarHeight = with(density) { navBottom.toDp() }
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -682,13 +672,13 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Column(
+                androidx.compose.foundation.lazy.LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false)
-                        .heightIn(min = 60.dp, max = 320.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .heightIn(min = 60.dp, max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    state = androidx.compose.foundation.lazy.rememberLazyListState()
                 ) {
                     val visibleMessages = latestMessageIdWhenJarvisOpened?.let { markerId ->
                         val markerIndex = chatHistory.indexOfFirst { it.id == markerId }
@@ -696,7 +686,8 @@ fun HomeScreen(
                     } ?: chatHistory
                     val recentMessages = visibleMessages.takeLast(8)
                     if (recentMessages.isNotEmpty()) {
-                        recentMessages.forEach { message ->
+                        items(recentMessages.size) { index ->
+                            val message = recentMessages[index]
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
@@ -808,13 +799,11 @@ fun HomeScreen(
                     }
                 }
 
-                // Explicitly push the box above the keyboard or navigation bar
-                Spacer(modifier = Modifier.height(if (keyboardHeight > 0.dp) keyboardHeight + 8.dp else navBarHeight + 8.dp))
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 
-    // Memory & Preferences Area Dialog
     if (showMemoryDialog) {
         val memoryEntries = remember(userPreferences) {
             mutableStateListOf<MemoryEntry>().apply {

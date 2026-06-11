@@ -57,9 +57,22 @@ private fun findOverlappingEvent(
 
 class JarvisViewModel : ViewModel() {
     
-    private val apiKey = com.example.calendarapp.BuildConfig.GEMINI_API_KEY
-    private val primaryModelName = "gemini-3.5-flash"
-    private val fallbackModelName = "gemini-2.5-flash"
+    private val geminiApiKey = com.example.calendarapp.BuildConfig.GEMINI_API_KEY
+    private val openRouterApiKey = com.example.calendarapp.BuildConfig.OPENROUTER_API_KEY
+    private val primaryModelName = "gemini-1.5-flash"
+    private val openRouterModels = listOf(
+        "nvidia/nemotron-nano-9b-v2:free",
+        "nvidia/nemotron-nano-12b-v2-vl:free",
+        "openai/gpt-oss-20b:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "nvidia/nemotron-3-nano-30b-a3b:free",
+        "google/gemma-4-31b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "qwen/qwen3-next-80b-a3b-instruct:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "openai/gpt-oss-120b:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free"
+    )
 
     private val _chatHistory = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatHistory: StateFlow<List<ChatMessage>> = _chatHistory.asStateFlow()
@@ -116,12 +129,101 @@ class JarvisViewModel : ViewModel() {
         }
     }
 
-    private fun shouldUseFallback(error: Exception): Boolean {
-        val errorText = "${error::class.simpleName} ${error.message}".lowercase()
-        return errorText.contains("quota") ||
-            errorText.contains("rate") ||
-            errorText.contains("resource_exhausted") ||
-            errorText.contains("429")
+    data class ParsedFunctionCall(val name: String, val args: Map<String, Any>)
+
+    private suspend fun sendToOpenAiCompatibleApi(
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        systemInstruction: String,
+        historyList: List<ChatMessage>,
+        newMessage: String
+    ): Pair<String, List<ParsedFunctionCall>> {
+        val api = com.example.calendarapp.api.FallbackApiClient.create(baseUrl)
+        val messages = mutableListOf<com.example.calendarapp.api.Message>()
+        messages.add(com.example.calendarapp.api.Message(role = "system", content = systemInstruction))
+        historyList.forEach {
+            messages.add(com.example.calendarapp.api.Message(role = if (it.isUser) "user" else "assistant", content = it.text))
+        }
+        messages.add(com.example.calendarapp.api.Message(role = "user", content = newMessage))
+
+        val openAiTools = listOf(
+            com.example.calendarapp.api.Tool(
+                function = com.example.calendarapp.api.FunctionDeclaration(
+                    name = "create_event",
+                    description = "Creates a new calendar event.",
+                    parameters = com.example.calendarapp.api.JsonSchema(
+                        properties = mapOf(
+                            "title" to com.example.calendarapp.api.JsonSchemaProperty("string", "The title of the event"),
+                            "time" to com.example.calendarapp.api.JsonSchemaProperty("string", "The time of the event (e.g., '10:00 AM - 11:30 AM')"),
+                            "day" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The day of the month as an integer"),
+                            "month" to com.example.calendarapp.api.JsonSchemaProperty("string", "The full name of the month in ENGLISH ONLY"),
+                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The year of the event")
+                        ),
+                        required = listOf("title", "time", "day", "month", "year")
+                    )
+                )
+            ),
+            com.example.calendarapp.api.Tool(
+                function = com.example.calendarapp.api.FunctionDeclaration(
+                    name = "delete_event",
+                    description = "Deletes an existing calendar event by ID.",
+                    parameters = com.example.calendarapp.api.JsonSchema(
+                        properties = mapOf(
+                            "eventId" to com.example.calendarapp.api.JsonSchemaProperty("string", "The unique ID of the event to delete")
+                        ),
+                        required = listOf("eventId")
+                    )
+                )
+            ),
+            com.example.calendarapp.api.Tool(
+                function = com.example.calendarapp.api.FunctionDeclaration(
+                    name = "modify_event",
+                    description = "Modifies an existing calendar event. You MUST provide the full updated state of the event, including all fields.",
+                    parameters = com.example.calendarapp.api.JsonSchema(
+                        properties = mapOf(
+                            "eventId" to com.example.calendarapp.api.JsonSchemaProperty("string", "The unique ID of the event to modify"),
+                            "title" to com.example.calendarapp.api.JsonSchemaProperty("string", "The new title of the event"),
+                            "time" to com.example.calendarapp.api.JsonSchemaProperty("string", "The new time of the event"),
+                            "day" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The new day of the month"),
+                            "month" to com.example.calendarapp.api.JsonSchemaProperty("string", "The new month name in ENGLISH ONLY"),
+                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The new year")
+                        ),
+                        required = listOf("eventId", "title", "time", "day", "month", "year")
+                    )
+                )
+            )
+        )
+
+        val request = com.example.calendarapp.api.ChatCompletionRequest(
+            model = modelName,
+            messages = messages,
+            tools = openAiTools
+        )
+
+        val response = api.createChatCompletion(
+            authHeader = "Bearer $apiKey",
+            referer = "https://calendarapp.example.com",
+            title = "Calendar App",
+            request = request
+        )
+
+        val choice = response.choices.firstOrNull()?.message ?: return Pair("", emptyList())
+        val text = choice.content ?: ""
+        val parsedCalls = choice.tool_calls?.mapNotNull { call ->
+            try {
+                val argsMap = mutableMapOf<String, Any>()
+                val jsonObject = org.json.JSONObject(call.function.arguments)
+                jsonObject.keys().forEach { key ->
+                    argsMap[key] = jsonObject.get(key)
+                }
+                ParsedFunctionCall(name = call.function.name, args = argsMap)
+            } catch (e: Exception) {
+                null
+            }
+        } ?: emptyList()
+
+        return Pair(text, parsedCalls)
     }
 
     fun handleUserPrompt(
@@ -160,29 +262,71 @@ class JarvisViewModel : ViewModel() {
                     "\n\nReply in the same language as this user message. If the user message mixes languages, use the dominant language of the user message." +
                     "\n\n" + contextStr
 
-                suspend fun sendToModel(modelName: String) = GenerativeModel(
-                    modelName = modelName,
-                    apiKey = apiKey,
-                    tools = tools,
-                    systemInstruction = systemInstruction
-                ).startChat(history = historyList).sendMessage(message)
-
-                val response = try {
-                    sendToModel(primaryModelName)
-                } catch (e: Exception) {
-                    if (shouldUseFallback(e)) sendToModel(fallbackModelName) else throw e
+                suspend fun sendToGemini(): Pair<String, List<ParsedFunctionCall>> {
+                    val res = GenerativeModel(
+                        modelName = primaryModelName,
+                        apiKey = geminiApiKey,
+                        tools = tools,
+                        systemInstruction = systemInstruction
+                    ).startChat(history = historyList).sendMessage(message)
+                    val parsedCalls = res.functionCalls.map {
+                        ParsedFunctionCall(
+                            name = it.name,
+                            args = it.args.mapValues { entry -> entry.value ?: "" }
+                        )
+                    }
+                    return Pair(res.text ?: "", parsedCalls)
                 }
 
-                var responseText = response.text ?: ""
+                suspend fun sendToOpenRouterFallback(): Pair<String, List<ParsedFunctionCall>> {
+                    var lastException: Exception? = null
+                    for (model in openRouterModels) {
+                        try {
+                            return sendToOpenAiCompatibleApi(
+                                baseUrl = "https://openrouter.ai/api/",
+                                apiKey = openRouterApiKey,
+                                modelName = model,
+                                systemInstruction = buildSystemInstruction(userPreferences),
+                                historyList = previousHistory,
+                                newMessage = message
+                            )
+                        } catch (e: Exception) {
+                            lastException = e
+                            if (e.message?.contains("401") == true) {
+                                throw e // Stop iterating if the API key is unauthorized
+                            }
+                            // Otherwise continue to the next fallback model
+                        }
+                    }
+                    throw lastException ?: Exception("All OpenRouter models failed.")
+                }
 
-                response.functionCalls.forEach { call ->
+                val responsePair = try {
+                    sendToGemini()
+                } catch (e: Exception) {
+                    try {
+                        sendToOpenRouterFallback()
+                    } catch (openRouterException: Exception) {
+                        val errorText = openRouterException.message ?: openRouterException.toString()
+                        if (errorText.contains("401")) {
+                            Pair("Errore: Impossibile contattare OpenRouter. Verifica di aver inserito correttamente la chiave OPENROUTER_API_KEY nel file .env (Errore 401). L'errore originale di Gemini era: ${e.message}", emptyList())
+                        } else {
+                            Pair("Errore di rete con OpenRouter: $errorText. L'errore originale di Gemini era: ${e.message}", emptyList())
+                        }
+                    }
+                }
+
+                var responseText = responsePair.first
+                val functionCalls = responsePair.second
+
+                functionCalls.forEach { call ->
                     when (call.name) {
                         "create_event" -> {
                             val args = call.args
                             val event = CalendarEvent(
-                                day = args["day"]?.toString()?.toFloat()?.toInt() ?: 1,
+                                day = args["day"]?.toString()?.toFloatOrNull()?.toInt() ?: 1,
                                 month = args["month"]?.toString() ?: "January",
-                                year = args["year"]?.toString()?.toFloat()?.toInt() ?: 2026,
+                                year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: 2026,
                                 title = args["title"]?.toString()?.uppercase() ?: "NEW EVENT",
                                 time = args["time"]?.toString() ?: "12:00 PM"
                             )
@@ -196,7 +340,8 @@ class JarvisViewModel : ViewModel() {
                             }
                         }
                         "delete_event" -> {
-                            val id = call.args["eventId"]?.toString() ?: call.args.values.firstOrNull()?.toString()
+                            val args = call.args
+                            val id = args["eventId"]?.toString() ?: args.values.firstOrNull()?.toString()
                             if (id != null) {
                                 onRemoveEvent(id)
                                 if (responseText.isBlank()) responseText = "Deleted the requested event."
@@ -209,9 +354,9 @@ class JarvisViewModel : ViewModel() {
                                 val existingEvent = currentEvents.firstOrNull { it.id == id }
                                 val modifiedEvent = CalendarEvent(
                                     id = id,
-                                    day = args["day"]?.toString()?.toFloat()?.toInt() ?: 1,
+                                    day = args["day"]?.toString()?.toFloatOrNull()?.toInt() ?: 1,
                                     month = args["month"]?.toString() ?: "January",
-                                    year = args["year"]?.toString()?.toFloat()?.toInt() ?: 2026,
+                                    year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: 2026,
                                     title = args["title"]?.toString()?.uppercase() ?: "UPDATED EVENT",
                                     time = args["time"]?.toString() ?: "12:00 PM",
                                     priority = existingEvent?.priority ?: "Medium",
