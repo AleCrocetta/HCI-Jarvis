@@ -183,6 +183,7 @@ private fun EditPickerField(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun TimeWheelColumn(
     label: String,
@@ -191,52 +192,149 @@ private fun TimeWheelColumn(
     modifier: Modifier = Modifier,
     onValueSelected: (Int) -> Unit
 ) {
+    val visibleItems = 5
+    val halfVisible = visibleItems / 2
+    val itemHeightDp = 44.dp
+    val initialIndex = values.indexOf(selectedValue).coerceAtLeast(0)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(
+        initialFirstVisibleItemIndex = initialIndex
+    )
+    val snapFlingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(
+        lazyListState = listState
+    )
+
+    // Derive which item is centered
+    val centeredIndex by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = layoutInfo.viewportStartOffset + layoutInfo.viewportSize.height / 2
+            layoutInfo.visibleItemsInfo
+                .filter { it.index in 0 until values.size + halfVisible * 2 }
+                .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }
+                ?.index?.minus(halfVisible)?.coerceIn(0, values.size - 1)
+                ?: initialIndex
+        }
+    }
+
+    // Notify parent of selection changes
+    LaunchedEffect(centeredIndex) {
+        if (centeredIndex in values.indices) {
+            onValueSelected(values[centeredIndex])
+        }
+    }
+
+    val totalHeight = itemHeightDp * visibleItems
+
     Column(modifier = modifier) {
         Text(label, color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(6.dp))
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(150.dp)
+                .height(totalHeight)
                 .clip(RoundedCornerShape(12.dp))
                 .background(LightGrayBg)
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 6.dp)
         ) {
-            values.forEachIndexed { index, value ->
-                val selected = value == selectedValue
-                val selectedIndex = values.indexOf(selectedValue).coerceAtLeast(0)
-                val distance = abs(index - selectedIndex).coerceAtMost(3)
-                val rotation = when {
-                    index < selectedIndex -> 18f
-                    index > selectedIndex -> -18f
-                    else -> 0f
+            androidx.compose.foundation.lazy.LazyColumn(
+                state = listState,
+                flingBehavior = snapFlingBehavior,
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Top padding spacers
+                items(halfVisible) {
+                    Spacer(modifier = Modifier.height(itemHeightDp).fillMaxWidth())
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                        .clickable { onValueSelected(value) }
-                        .padding(vertical = 10.dp)
-                        .graphicsLayer {
-                            rotationX = rotation
-                            cameraDistance = 10f * density
-                            alpha = when (distance) {
-                                0 -> 1f
-                                1 -> 0.78f
-                                2 -> 0.56f
-                                else -> 0.38f
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "%02d".format(value),
-                        color = DarkBlue,
-                        fontSize = if (selected) 22.sp else 18.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+
+                // Actual value items
+                items(values.size) { index ->
+                    val isSelected = index == centeredIndex
+                    val distanceFromCenter = kotlin.math.abs(index - centeredIndex)
+                    val alpha = when (distanceFromCenter) {
+                        0 -> 1f
+                        1 -> 0.55f
+                        else -> 0.3f
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .height(itemHeightDp)
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) LightBlueBg else Color.Transparent
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "%02d".format(values[index]),
+                            color = if (isSelected) DarkBlue else DarkBlue.copy(alpha = alpha),
+                            fontSize = if (isSelected) 22.sp else 18.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                // Bottom padding spacers
+                items(halfVisible) {
+                    Spacer(modifier = Modifier.height(itemHeightDp).fillMaxWidth())
+                }
+            }
+
+            // Top fade overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(itemHeightDp * 1.2f)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                LightGrayBg,
+                                LightGrayBg.copy(alpha = 0.7f),
+                                Color.Transparent
+                            )
+                        )
                     )
-                }
+            )
+
+            // Bottom fade overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(itemHeightDp * 1.2f)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                LightGrayBg.copy(alpha = 0.7f),
+                                LightGrayBg
+                            )
+                        )
+                    )
+            )
+
+            // Center selection indicator lines
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(itemHeightDp)
+                    .align(Alignment.Center)
+                    .padding(horizontal = 4.dp)
+            ) {
+                Divider(
+                    color = DarkBlue.copy(alpha = 0.15f),
+                    thickness = 1.5.dp,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+                Divider(
+                    color = DarkBlue.copy(alpha = 0.15f),
+                    thickness = 1.5.dp,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         }
     }
@@ -973,8 +1071,6 @@ fun EditEventDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 520.dp)
-                        .verticalScroll(rememberScrollState())
                 ) {
                     Text("START TIME", color = TextGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))

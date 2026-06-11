@@ -639,8 +639,6 @@ fun HomeScreen(
     }
 
     if (showJarvisChat) {
-        val chatInputBringIntoViewRequester = remember { BringIntoViewRequester() }
-
         fun submitJarvisPrompt() {
             val prompt = jarvisChatText.trim()
             if (prompt.isBlank()) return
@@ -655,11 +653,14 @@ fun HomeScreen(
                 showJarvisChat = false
                 submittedFromJarvisChat = false
             },
-            containerColor = White
+            containerColor = White,
+            windowInsets = WindowInsets(0, 0, 0, 0)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .padding(horizontal = 20.dp)
             ) {
                 Text(
@@ -680,7 +681,8 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 320.dp)
+                        .weight(1f, fill = false)
+                        .heightIn(min = 60.dp, max = 320.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -718,9 +720,6 @@ fun HomeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bringIntoViewRequester(chatInputBringIntoViewRequester)
-                        .imePadding()
-                        .navigationBarsPadding()
                         .padding(bottom = 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -736,15 +735,7 @@ fun HomeScreen(
                             )
                         },
                         modifier = Modifier
-                            .weight(1f)
-                            .onFocusChanged { focusState ->
-                                if (focusState.isFocused) {
-                                    coroutineScope.launch {
-                                        delay(300)
-                                        chatInputBringIntoViewRequester.bringIntoView()
-                                    }
-                                }
-                            },
+                            .weight(1f),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = DarkBlue.copy(alpha = 0.4f),
                             unfocusedBorderColor = Color.Transparent,

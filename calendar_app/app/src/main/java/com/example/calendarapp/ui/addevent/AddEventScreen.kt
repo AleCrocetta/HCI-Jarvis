@@ -7,7 +7,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,9 +24,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.calendarapp.ui.theme.DarkBlue
@@ -31,6 +37,7 @@ import com.example.calendarapp.ui.theme.LightBlueBg
 import com.example.calendarapp.ui.theme.LightGrayBg
 import com.example.calendarapp.ui.theme.TextGray
 import com.example.calendarapp.ui.theme.White
+import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -442,7 +449,7 @@ fun AddEventScreen(
         )
     }
 
-    // Time Slot Selection Dialog (Vertical Scrollable list!)
+    // Time Slot Selection Dialog (Wheel-style discrete snap picker!)
     if (showTimePicker) {
         val timesList = listOf(
             "06:30 AM - 07:00 AM",
@@ -454,42 +461,181 @@ fun AddEventScreen(
             "06:00 PM - 07:00 PM",
             "08:00 PM - 09:00 PM"
         )
+        val itemHeightDp = 52.dp
+        val visibleItems = 5 // show 5 items, center is selected
+        val initialIndex = timesList.indexOf(time).coerceAtLeast(0)
+
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
             title = { Text("Select Time Slot", color = DarkBlue, fontWeight = FontWeight.Bold) },
             text = {
-                Column(
-                    modifier = Modifier
-                        .height(240.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    timesList.forEach { timeSlot ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (time == timeSlot) LightBlueBg else LightGrayBg)
-                                .clickable {
-                                    time = timeSlot
-                                    showTimePicker = false
-                                }
-                                .padding(16.dp)
-                        ) {
-                            Text(
-                                text = timeSlot,
-                                color = DarkBlue,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                        }
+                WheelTimePicker(
+                    items = timesList,
+                    initialSelectedIndex = initialIndex,
+                    visibleItems = visibleItems,
+                    itemHeight = itemHeightDp,
+                    onItemSelected = { selectedTime ->
+                        time = selectedTime
                     }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showTimePicker = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkBlue),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Confirm", color = White, fontWeight = FontWeight.Bold)
                 }
             },
-            confirmButton = {},
             containerColor = White,
             shape = RoundedCornerShape(24.dp)
         )
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun WheelTimePicker(
+    items: List<String>,
+    initialSelectedIndex: Int,
+    visibleItems: Int,
+    itemHeight: Dp,
+    onItemSelected: (String) -> Unit
+) {
+    val halfVisible = visibleItems / 2
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialSelectedIndex)
+    val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+
+    // Derive which item is centered
+    val centeredIndex by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = layoutInfo.viewportStartOffset + layoutInfo.viewportSize.height / 2
+            layoutInfo.visibleItemsInfo
+                .filter { it.index in 0 until items.size + halfVisible * 2 }
+                .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }
+                ?.index?.minus(halfVisible)?.coerceIn(0, items.size - 1)
+                ?: initialSelectedIndex
+        }
+    }
+
+    // Notify parent of selection changes
+    LaunchedEffect(centeredIndex) {
+        if (centeredIndex in items.indices) {
+            onItemSelected(items[centeredIndex])
+        }
+    }
+
+    val totalHeight = itemHeight * visibleItems
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(totalHeight)
+    ) {
+        LazyColumn(
+            state = listState,
+            flingBehavior = snapFlingBehavior,
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Top padding items (empty spacers)
+            items(halfVisible) {
+                Spacer(modifier = Modifier.height(itemHeight).fillMaxWidth())
+            }
+
+            // Actual time items
+            items(items.size) { index ->
+                val isSelected = index == centeredIndex
+                val distanceFromCenter = (index - centeredIndex).absoluteValue
+                val alpha = when (distanceFromCenter) {
+                    0 -> 1f
+                    1 -> 0.55f
+                    else -> 0.3f
+                }
+
+                Box(
+                    modifier = Modifier
+                        .height(itemHeight)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (isSelected) LightBlueBg else Color.Transparent
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = items[index],
+                        color = if (isSelected) DarkBlue else DarkBlue.copy(alpha = alpha),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = (if (isSelected) 16 else 14).sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            // Bottom padding items (empty spacers)
+            items(halfVisible) {
+                Spacer(modifier = Modifier.height(itemHeight).fillMaxWidth())
+            }
+        }
+
+        // Top fade overlay
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(itemHeight * 1.5f)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            White,
+                            White.copy(alpha = 0.8f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // Bottom fade overlay
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(itemHeight * 1.5f)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            White.copy(alpha = 0.8f),
+                            White
+                        )
+                    )
+                )
+        )
+
+        // Center selection indicator lines
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(itemHeight)
+                .align(Alignment.Center)
+                .padding(horizontal = 8.dp)
+        ) {
+            Divider(
+                color = DarkBlue.copy(alpha = 0.15f),
+                thickness = 1.5.dp,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+            Divider(
+                color = DarkBlue.copy(alpha = 0.15f),
+                thickness = 1.5.dp,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
     }
 }
 
