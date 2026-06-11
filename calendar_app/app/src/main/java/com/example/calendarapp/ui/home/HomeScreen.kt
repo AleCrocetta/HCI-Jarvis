@@ -656,11 +656,15 @@ fun HomeScreen(
             containerColor = White,
             windowInsets = WindowInsets(0, 0, 0, 0)
         ) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val imeBottom = WindowInsets.ime.getBottom(density)
+            val navBottom = WindowInsets.navigationBars.getBottom(density)
+            val keyboardHeight = with(density) { (imeBottom - navBottom).coerceAtLeast(0).toDp() }
+            val navBarHeight = with(density) { navBottom.toDp() }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .imePadding()
                     .padding(horizontal = 20.dp)
             ) {
                 Text(
@@ -715,12 +719,11 @@ fun HomeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 20.dp),
+                        .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -804,6 +807,9 @@ fun HomeScreen(
                         )
                     }
                 }
+
+                // Explicitly push the box above the keyboard or navigation bar
+                Spacer(modifier = Modifier.height(if (keyboardHeight > 0.dp) keyboardHeight + 8.dp else navBarHeight + 8.dp))
             }
         }
     }
