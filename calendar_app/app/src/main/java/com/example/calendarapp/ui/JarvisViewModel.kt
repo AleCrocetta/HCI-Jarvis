@@ -14,23 +14,54 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.Calendar
+import java.util.Locale
 import java.util.UUID
 
 data class ChatMessage(val id: String = UUID.randomUUID().toString(), val text: String, val isUser: Boolean)
 
+private fun parseEventClockTime(value: String): Int? {
+    val match = Regex("""^\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*$""", RegexOption.IGNORE_CASE).find(value.trim()) ?: return null
+    var hour = match.groupValues[1].toIntOrNull() ?: return null
+    val minute = match.groupValues[2].ifBlank { "00" }.toIntOrNull() ?: return null
+    val marker = match.groupValues[3].uppercase(Locale.US)
+    if (hour !in 1..12 || minute !in 0..59) return null
+    if (marker == "PM" && hour != 12) hour += 12
+    if (marker == "AM" && hour == 12) hour = 0
+    return hour * 60 + minute
+}
+
+private fun formatEventClockTime(totalMinutes: Int): String {
+    val normalizedMinutes = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60)
+    val hour24 = normalizedMinutes / 60
+    val minute = normalizedMinutes % 60
+    val marker = if (hour24 >= 12) "PM" else "AM"
+    val hour12 = when (val hour = hour24 % 12) {
+        0 -> 12
+        else -> hour
+    }
+    return String.format(Locale.US, "%02d:%02d %s", hour12, minute, marker)
+}
+
+private fun normalizeEventTimeRange(time: String): String {
+    val parts = time.split(Regex("""\s*-\s*"""), limit = 2)
+    if (parts.size == 2) {
+        val start = parseEventClockTime(parts[0])
+        val end = parseEventClockTime(parts[1])
+        if (start != null && end != null && end > start) {
+            return "${formatEventClockTime(start)} - ${formatEventClockTime(end)}"
+        }
+    }
+
+    val start = parseEventClockTime(time) ?: return time
+    return "${formatEventClockTime(start)} - ${formatEventClockTime(start + 60)}"
+}
+
 private fun parseEventTimeRange(time: String): IntRange? {
-    val parts = time.split(" - ")
+    val parts = normalizeEventTimeRange(time).split(" - ")
     if (parts.size != 2) return null
 
     fun parseTime(value: String): Int? {
-        val match = Regex("""(\d{1,2}):(\d{2})\s*(AM|PM)""", RegexOption.IGNORE_CASE).find(value.trim()) ?: return null
-        var hour = match.groupValues[1].toIntOrNull() ?: return null
-        val minute = match.groupValues[2].toIntOrNull() ?: return null
-        val marker = match.groupValues[3].uppercase()
-        if (hour !in 1..12 || minute !in 0..59) return null
-        if (marker == "PM" && hour != 12) hour += 12
-        if (marker == "AM" && hour == 12) hour = 0
-        return hour * 60 + minute
+        return parseEventClockTime(value)
     }
 
     val start = parseTime(parts[0]) ?: return null
@@ -363,7 +394,7 @@ class JarvisViewModel : ViewModel() {
                                 month = args["month"]?.toString() ?: "January",
                                 year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: Calendar.getInstance().get(Calendar.YEAR),
                                 title = args["title"]?.toString()?.uppercase() ?: "NEW EVENT",
-                                time = args["time"]?.toString() ?: "12:00 PM"
+                                time = normalizeEventTimeRange(args["time"]?.toString() ?: "12:00 PM")
                             )
                             val overlap = findOverlappingEvent(event, currentEvents)
                             if (overlap != null) {
@@ -393,7 +424,7 @@ class JarvisViewModel : ViewModel() {
                                     month = args["month"]?.toString() ?: "January",
                                     year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: 2026,
                                     title = args["title"]?.toString()?.uppercase() ?: "UPDATED EVENT",
-                                    time = args["time"]?.toString() ?: "12:00 PM",
+                                    time = normalizeEventTimeRange(args["time"]?.toString() ?: "12:00 PM"),
                                     priority = existingEvent?.priority ?: "Medium",
                                     link = existingEvent?.link,
                                     fileNames = existingEvent?.fileNames ?: emptyList(),
