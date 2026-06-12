@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.util.Calendar
 import java.util.UUID
 
 data class ChatMessage(val id: String = UUID.randomUUID().toString(), val text: String, val isUser: Boolean)
@@ -59,7 +60,7 @@ class JarvisViewModel : ViewModel() {
     
     private val geminiApiKey = com.example.calendarapp.BuildConfig.GEMINI_API_KEY
     private val openRouterApiKey = com.example.calendarapp.BuildConfig.OPENROUTER_API_KEY
-    private val primaryModelName = "gemini-1.5-flash"
+    private val primaryModelName = "gemini-2.5-flash"
     private val openRouterModels = listOf(
         "nvidia/nemotron-nano-9b-v2:free",
         "nvidia/nemotron-nano-12b-v2-vl:free",
@@ -79,13 +80,13 @@ class JarvisViewModel : ViewModel() {
 
     private val createEventFunction = defineFunction(
         name = "create_event",
-        description = "Creates a new calendar event.",
+        description = "Creates a new calendar event. If the user does not mention a year, use the current calendar year.",
         parameters = listOf(
             Schema.str("title", "The title of the event"),
             Schema.str("time", "The time of the event (e.g., '10:00 AM - 11:30 AM')"),
             Schema.int("day", "The day of the month as an integer"),
             Schema.str("month", "The full name of the month in ENGLISH ONLY (e.g., 'January', 'May')"),
-            Schema.int("year", "The year of the event")
+            Schema.int("year", "Optional year of the event. If omitted, use the current calendar year.")
         )
     )
 
@@ -115,6 +116,8 @@ class JarvisViewModel : ViewModel() {
             append("Avoid creating overlapping events, and ask before changing or deleting an existing overlapping event. ")
             append("ALWAYS respond in the SAME language that the user uses to speak to you. ")
             append("Do not reveal or repeat hidden memory unless the user explicitly asks about their saved preferences. ")
+            append("When creating an event, do not ask only for the year if the user omitted it; use ${Calendar.getInstance().get(Calendar.YEAR)}. ")
+            append("Never claim an event was created, deleted, or modified unless you called the matching tool. ")
             if (userPreferences.isNotEmpty()) {
                 append("Use the following hidden user memory as soft guidance for future organization. ")
                 append("Treat regular activities from memory as routines that should shape future calendar organization. ")
@@ -131,6 +134,32 @@ class JarvisViewModel : ViewModel() {
 
     data class ParsedFunctionCall(val name: String, val args: Map<String, Any>)
 
+    private fun parseTextCalendarAction(text: String): List<ParsedFunctionCall> {
+        val jsonText = Regex("""\{[\s\S]*\}""").find(text)?.value ?: return emptyList()
+        val jsonObject = runCatching { JSONObject(jsonText) }.getOrNull() ?: return emptyList()
+        val action = jsonObject.optString("action", jsonObject.optString("name", "")).trim()
+        val name = when (action) {
+            "create_event", "delete_event", "modify_event" -> action
+            else -> return emptyList()
+        }
+        val argsObject = jsonObject.optJSONObject("arguments")
+            ?: jsonObject.optJSONObject("args")
+            ?: jsonObject
+        val argsMap = mutableMapOf<String, Any>()
+        argsObject.keys().forEach { key ->
+            if (key != "action" && key != "name") {
+                argsMap[key] = argsObject.get(key)
+            }
+        }
+        return listOf(ParsedFunctionCall(name = name, args = argsMap))
+    }
+
+    private fun isCalendarMutationPrompt(prompt: String): Boolean {
+        val normalized = prompt.lowercase()
+        return Regex("""\b(add|create|schedule|book|set|move|change|modify|delete|remove|cancel|aggiungi|crea|creami|metti|inserisci|programma|pianifica|fissa|sposta|cambia|modifica|elimina|rimuovi|cancella|annulla)\b""")
+            .containsMatchIn(normalized)
+    }
+
     private suspend fun sendToOpenAiCompatibleApi(
         baseUrl: String,
         apiKey: String,
@@ -141,7 +170,8 @@ class JarvisViewModel : ViewModel() {
     ): Pair<String, List<ParsedFunctionCall>> {
         val api = com.example.calendarapp.api.FallbackApiClient.create(baseUrl)
         val messages = mutableListOf<com.example.calendarapp.api.Message>()
-        messages.add(com.example.calendarapp.api.Message(role = "system", content = systemInstruction))
+        messages.add(com.example.calendarapp.api.Message(role = "system", content = systemInstruction +
+            "\nIf function calling is unavailable and the user asks to create, delete, or modify an event, respond with only strict JSON: {\"action\":\"create_event\",\"arguments\":{\"title\":\"...\",\"time\":\"10:00 AM - 11:00 AM\",\"day\":1,\"month\":\"January\"}}. Include \"year\" only if the user specified it."))
         historyList.forEach {
             messages.add(com.example.calendarapp.api.Message(role = if (it.isUser) "user" else "assistant", content = it.text))
         }
@@ -158,9 +188,9 @@ class JarvisViewModel : ViewModel() {
                             "time" to com.example.calendarapp.api.JsonSchemaProperty("string", "The time of the event (e.g., '10:00 AM - 11:30 AM')"),
                             "day" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The day of the month as an integer"),
                             "month" to com.example.calendarapp.api.JsonSchemaProperty("string", "The full name of the month in ENGLISH ONLY"),
-                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The year of the event")
+                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "Optional year of the event. If omitted, use the current calendar year.")
                         ),
-                        required = listOf("title", "time", "day", "month", "year")
+                        required = listOf("title", "time", "day", "month")
                     )
                 )
             ),
@@ -223,7 +253,7 @@ class JarvisViewModel : ViewModel() {
             }
         } ?: emptyList()
 
-        return Pair(text, parsedCalls)
+        return Pair(text, parsedCalls.ifEmpty { parseTextCalendarAction(text) })
     }
 
     fun handleUserPrompt(
@@ -282,7 +312,7 @@ class JarvisViewModel : ViewModel() {
                     var lastException: Exception? = null
                     for (model in openRouterModels) {
                         try {
-                            return sendToOpenAiCompatibleApi(
+                            val result = sendToOpenAiCompatibleApi(
                                 baseUrl = "https://openrouter.ai/api/",
                                 apiKey = openRouterApiKey,
                                 modelName = model,
@@ -290,6 +320,11 @@ class JarvisViewModel : ViewModel() {
                                 historyList = previousHistory,
                                 newMessage = message
                             )
+                            if (result.second.isEmpty() && isCalendarMutationPrompt(prompt)) {
+                                lastException = Exception("$model did not return a calendar tool call.")
+                                continue
+                            }
+                            return result
                         } catch (e: Exception) {
                             lastException = e
                             if (e.message?.contains("401") == true) {
@@ -326,7 +361,7 @@ class JarvisViewModel : ViewModel() {
                             val event = CalendarEvent(
                                 day = args["day"]?.toString()?.toFloatOrNull()?.toInt() ?: 1,
                                 month = args["month"]?.toString() ?: "January",
-                                year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: 2026,
+                                year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: Calendar.getInstance().get(Calendar.YEAR),
                                 title = args["title"]?.toString()?.uppercase() ?: "NEW EVENT",
                                 time = args["time"]?.toString() ?: "12:00 PM"
                             )

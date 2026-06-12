@@ -51,7 +51,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.input.KeyboardType
 
 private data class MemoryEntry(
@@ -353,7 +362,9 @@ fun HomeScreen(
                             )
                         )
                         .clickable {
-                            latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+                            if (latestMessageIdWhenJarvisOpened == null) {
+                                latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+                            }
                             submittedFromJarvisChat = false
                             showJarvisChat = true
                         },
@@ -377,7 +388,9 @@ fun HomeScreen(
                         .background(secondaryButtonColor)
                         .border(1.dp, secondaryButtonBorder, CircleShape)
                         .clickable {
-                            latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+                            if (latestMessageIdWhenJarvisOpened == null) {
+                                latestMessageIdWhenJarvisOpened = chatHistory.lastOrNull()?.id
+                            }
                             focusedEventIdBeforeJarvisSubmit = highlightedEventId
                             submittedFromJarvisChat = true
                             showJarvisChat = true
@@ -498,6 +511,21 @@ fun HomeScreen(
 
             if (feedbackMessage != null && dismissedFeedbackId != feedbackMessage.id) {
                 val feedbackState = classifyAiFeedback(feedbackMessage.text)
+                fun handleFeedbackClick() {
+                    when (feedbackState) {
+                        AiFeedbackState.MissingInfo -> {
+                            showJarvisChat = true
+                            dismissedFeedbackId = feedbackMessage.id
+                        }
+                        AiFeedbackState.Success -> {
+                            showJarvisChat = false
+                            onSearchQueryChanged("")
+                            onViewAllChanged(false)
+                            dismissedFeedbackId = feedbackMessage.id
+                        }
+                        else -> Unit
+                    }
+                }
                 Surface(
                     color = White,
                     shape = RoundedCornerShape(16.dp),
@@ -506,6 +534,9 @@ fun HomeScreen(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = if (showUndoSnackbar) 88.dp else 16.dp)
+                        .clickable(enabled = feedbackState == AiFeedbackState.MissingInfo || feedbackState == AiFeedbackState.Success) {
+                            handleFeedbackClick()
+                        }
                         .pointerInput(feedbackMessage.id) {
                             detectVerticalDragGestures { _, dragAmount ->
                                 if (dragAmount < -20f) {
@@ -635,6 +666,29 @@ fun HomeScreen(
     }
 
     if (showJarvisChat) {
+        val visibleMessages = latestMessageIdWhenJarvisOpened?.let { markerId ->
+            val markerIndex = chatHistory.indexOfFirst { it.id == markerId }
+            if (markerIndex == -1) emptyList() else chatHistory.drop(markerIndex + 1)
+        } ?: chatHistory
+        val recentMessages = visibleMessages.takeLast(8)
+        val jarvisChatListState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val isJarvisThinking = submittedFromJarvisChat && recentMessages.lastOrNull()?.isUser == true
+        val ledTransition = rememberInfiniteTransition(label = "jarvis_input_led")
+        val ledProgress by ledTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1300, easing = LinearEasing)
+            ),
+            label = "jarvis_input_led_progress"
+        )
+
+        LaunchedEffect(recentMessages.lastOrNull()?.id) {
+            if (recentMessages.isNotEmpty()) {
+                jarvisChatListState.animateScrollToItem(recentMessages.lastIndex)
+            }
+        }
+
         fun submitJarvisPrompt() {
             val prompt = jarvisChatText.trim()
             if (prompt.isBlank()) return
@@ -655,6 +709,7 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .padding(horizontal = 20.dp)
             ) {
                 Text(
@@ -678,13 +733,8 @@ fun HomeScreen(
                         .weight(1f, fill = false)
                         .heightIn(min = 60.dp, max = 320.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    state = androidx.compose.foundation.lazy.rememberLazyListState()
+                    state = jarvisChatListState
                 ) {
-                    val visibleMessages = latestMessageIdWhenJarvisOpened?.let { markerId ->
-                        val markerIndex = chatHistory.indexOfFirst { it.id == markerId }
-                        if (markerIndex == -1) emptyList() else chatHistory.drop(markerIndex + 1)
-                    } ?: chatHistory
-                    val recentMessages = visibleMessages.takeLast(8)
                     if (recentMessages.isNotEmpty()) {
                         items(recentMessages.size) { index ->
                             val message = recentMessages[index]
@@ -718,27 +768,58 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = jarvisChatText,
-                        onValueChange = { jarvisChatText = it },
-                        placeholder = {
-                            Text(
-                                text = "Ask Jarvis...",
-                                color = TextGray,
-                                fontSize = 14.sp
-                            )
-                        },
+                    Box(
                         modifier = Modifier
-                            .weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = DarkBlue.copy(alpha = 0.4f),
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedContainerColor = LightGrayBg,
-                            unfocusedContainerColor = LightGrayBg
-                        ),
-                        shape = RoundedCornerShape(22.dp),
-                        singleLine = true
-                    )
+                            .weight(1f)
+                            .drawBehind {
+                                if (isJarvisThinking) {
+                                    val radius = 22.dp.toPx()
+                                    val perimeter = 2f * (size.width + size.height - 4f * radius) + (2f * Math.PI.toFloat() * radius)
+                                    val dashLength = perimeter * 0.18f
+                                    val dashEffect = PathEffect.dashPathEffect(
+                                        intervals = floatArrayOf(dashLength, perimeter),
+                                        phase = -ledProgress * perimeter
+                                    )
+                                    drawRoundRect(
+                                        color = Color(0xFF2979FF).copy(alpha = 0.22f),
+                                        cornerRadius = CornerRadius(radius, radius),
+                                        style = Stroke(width = 1.dp.toPx())
+                                    )
+                                    drawRoundRect(
+                                        color = Color(0xFF00E5FF).copy(alpha = 0.42f),
+                                        cornerRadius = CornerRadius(radius, radius),
+                                        style = Stroke(width = 9.dp.toPx(), pathEffect = dashEffect)
+                                    )
+                                    drawRoundRect(
+                                        color = Color(0xFF00E5FF),
+                                        cornerRadius = CornerRadius(radius, radius),
+                                        style = Stroke(width = 4.dp.toPx(), pathEffect = dashEffect)
+                                    )
+                                }
+                            }
+                    ) {
+                        OutlinedTextField(
+                            value = jarvisChatText,
+                            onValueChange = { jarvisChatText = it },
+                            placeholder = {
+                                Text(
+                                    text = "Ask Jarvis...",
+                                    color = TextGray,
+                                    fontSize = 14.sp
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (isJarvisThinking) Color.Transparent else DarkBlue.copy(alpha = 0.4f),
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = LightGrayBg,
+                                unfocusedContainerColor = LightGrayBg
+                            ),
+                            shape = RoundedCornerShape(22.dp),
+                            singleLine = true
+                        )
+                    }
 
                     Box(
                         modifier = Modifier
