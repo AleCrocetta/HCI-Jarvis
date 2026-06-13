@@ -56,6 +56,25 @@ private fun normalizeEventTimeRange(time: String): String {
     return "${formatEventClockTime(start)} - ${formatEventClockTime(start + 60)}"
 }
 
+private fun normalizePriority(priority: String?): String? {
+    val normalized = priority?.trim()?.lowercase(Locale.US) ?: return null
+    return when {
+        listOf("high", "alta", "alto", "urgent", "urgente").any { normalized.contains(it) } -> "High"
+        listOf("medium", "media", "medio").any { normalized.contains(it) } -> "Medium"
+        listOf("low", "bassa", "basso").any { normalized.contains(it) } -> "Low"
+        else -> null
+    }
+}
+
+private fun inferEventPriority(title: String): String {
+    val normalized = title.lowercase(Locale.US)
+    return when {
+        listOf("doctor", "dentist", "hospital", "medical", "exam", "study", "homework", "assignment", "chores", "clean", "laundry", "spesa", "medico", "dentista", "ospedale", "studio", "studiare", "compiti", "pulizie", "lavatrice").any { normalized.contains(it) } -> "High"
+        listOf("movie", "cinema", "party", "game", "gaming", "concert", "fun", "aperitivo", "film", "festa", "gioco", "concerto", "divertimento").any { normalized.contains(it) } -> "Low"
+        else -> "Medium"
+    }
+}
+
 private fun parseEventTimeRange(time: String): IntRange? {
     val parts = normalizeEventTimeRange(time).split(" - ")
     if (parts.size != 2) return null
@@ -117,7 +136,8 @@ class JarvisViewModel : ViewModel() {
             Schema.str("time", "The time of the event (e.g., '10:00 AM - 11:30 AM')"),
             Schema.int("day", "The day of the month as an integer"),
             Schema.str("month", "The full name of the month in ENGLISH ONLY (e.g., 'January', 'May')"),
-            Schema.int("year", "Optional year of the event. If omitted, use the current calendar year.")
+            Schema.int("year", "Optional year of the event. If omitted, use the current calendar year."),
+            Schema.str("priority", "Optional event priority: High, Medium, or Low. Infer it from the title if the user does not specify it.")
         )
     )
 
@@ -136,7 +156,8 @@ class JarvisViewModel : ViewModel() {
             Schema.str("time", "The new time of the event"),
             Schema.int("day", "The new day of the month"),
             Schema.str("month", "The new month name in ENGLISH ONLY"),
-            Schema.int("year", "The new year")
+            Schema.int("year", "The new year"),
+            Schema.str("priority", "Optional new priority: High, Medium, or Low")
         )
     )
 
@@ -148,6 +169,7 @@ class JarvisViewModel : ViewModel() {
             append("ALWAYS respond in the SAME language that the user uses to speak to you. ")
             append("Do not reveal or repeat hidden memory unless the user explicitly asks about their saved preferences. ")
             append("When creating an event, do not ask only for the year if the user omitted it; use ${Calendar.getInstance().get(Calendar.YEAR)}. ")
+            append("When creating an event, set priority to High for important tasks like doctors, study, exams, deadlines, or house chores; Low for fun or leisure events; Medium otherwise. ")
             append("Never claim an event was created, deleted, or modified unless you called the matching tool. ")
             if (userPreferences.isNotEmpty()) {
                 append("Use the following hidden user memory as soft guidance for future organization. ")
@@ -202,7 +224,7 @@ class JarvisViewModel : ViewModel() {
         val api = com.example.calendarapp.api.FallbackApiClient.create(baseUrl)
         val messages = mutableListOf<com.example.calendarapp.api.Message>()
         messages.add(com.example.calendarapp.api.Message(role = "system", content = systemInstruction +
-            "\nIf function calling is unavailable and the user asks to create, delete, or modify an event, respond with only strict JSON: {\"action\":\"create_event\",\"arguments\":{\"title\":\"...\",\"time\":\"10:00 AM - 11:00 AM\",\"day\":1,\"month\":\"January\"}}. Include \"year\" only if the user specified it."))
+            "\nIf function calling is unavailable and the user asks to create, delete, or modify an event, respond with only strict JSON: {\"action\":\"create_event\",\"arguments\":{\"title\":\"...\",\"time\":\"10:00 AM - 11:00 AM\",\"day\":1,\"month\":\"January\",\"priority\":\"Medium\"}}. Include \"year\" only if the user specified it."))
         historyList.forEach {
             messages.add(com.example.calendarapp.api.Message(role = if (it.isUser) "user" else "assistant", content = it.text))
         }
@@ -219,7 +241,8 @@ class JarvisViewModel : ViewModel() {
                             "time" to com.example.calendarapp.api.JsonSchemaProperty("string", "The time of the event (e.g., '10:00 AM - 11:30 AM')"),
                             "day" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The day of the month as an integer"),
                             "month" to com.example.calendarapp.api.JsonSchemaProperty("string", "The full name of the month in ENGLISH ONLY"),
-                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "Optional year of the event. If omitted, use the current calendar year.")
+                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "Optional year of the event. If omitted, use the current calendar year."),
+                            "priority" to com.example.calendarapp.api.JsonSchemaProperty("string", "Optional event priority: High, Medium, or Low. Infer it from the title if the user does not specify it.")
                         ),
                         required = listOf("title", "time", "day", "month")
                     )
@@ -248,7 +271,8 @@ class JarvisViewModel : ViewModel() {
                             "time" to com.example.calendarapp.api.JsonSchemaProperty("string", "The new time of the event"),
                             "day" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The new day of the month"),
                             "month" to com.example.calendarapp.api.JsonSchemaProperty("string", "The new month name in ENGLISH ONLY"),
-                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The new year")
+                            "year" to com.example.calendarapp.api.JsonSchemaProperty("integer", "The new year"),
+                            "priority" to com.example.calendarapp.api.JsonSchemaProperty("string", "Optional new priority: High, Medium, or Low")
                         ),
                         required = listOf("eventId", "title", "time", "day", "month", "year")
                     )
@@ -389,12 +413,14 @@ class JarvisViewModel : ViewModel() {
                     when (call.name) {
                         "create_event" -> {
                             val args = call.args
+                            val title = args["title"]?.toString() ?: "NEW EVENT"
                             val event = CalendarEvent(
                                 day = args["day"]?.toString()?.toFloatOrNull()?.toInt() ?: 1,
                                 month = args["month"]?.toString() ?: "January",
                                 year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: Calendar.getInstance().get(Calendar.YEAR),
-                                title = args["title"]?.toString()?.uppercase() ?: "NEW EVENT",
-                                time = normalizeEventTimeRange(args["time"]?.toString() ?: "12:00 PM")
+                                title = title.uppercase(),
+                                time = normalizeEventTimeRange(args["time"]?.toString() ?: "12:00 PM"),
+                                priority = normalizePriority(args["priority"]?.toString()) ?: inferEventPriority(title)
                             )
                             val overlap = findOverlappingEvent(event, currentEvents)
                             if (overlap != null) {
@@ -425,7 +451,7 @@ class JarvisViewModel : ViewModel() {
                                     year = args["year"]?.toString()?.toFloatOrNull()?.toInt() ?: 2026,
                                     title = args["title"]?.toString()?.uppercase() ?: "UPDATED EVENT",
                                     time = normalizeEventTimeRange(args["time"]?.toString() ?: "12:00 PM"),
-                                    priority = existingEvent?.priority ?: "Medium",
+                                    priority = normalizePriority(args["priority"]?.toString()) ?: existingEvent?.priority ?: "Medium",
                                     link = existingEvent?.link,
                                     fileNames = existingEvent?.fileNames ?: emptyList(),
                                     fileUris = existingEvent?.fileUris ?: emptyList(),
