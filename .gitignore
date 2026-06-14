@@ -1,0 +1,36 @@
+# File di build e artefatti di Gradle
+.gradle/
+build/
+**/build/
+bin/
+gen/
+out/
+
+# Configurazione locale (es. percorso dell'SDK Android, credenziali locali)
+local.properties
+
+# Log di sistema e file di log
+*.log
+
+# File temporanei di Android Studio e IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# File di dump della memoria (Java heap dumps)
+*.hprof
+
+# Keystore e chiavi (per evitare di caricare chiavi di firma o credenziali su Git)
+*.jks
+*.keystore
+google-services.json
+
+# File specifici del sistema operativo
+.DS_Store
+Thumbs.db
+Desktop.ini
