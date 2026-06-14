@@ -49,7 +49,7 @@ fun TodaySection(
     }
 
     val weekday = try {
-        selectedDate?.dayOfWeek?.getDisplayName(TextStyle.FULL, Locale.getDefault()) ?: "Unknown"
+        selectedDate?.dayOfWeek?.getDisplayName(TextStyle.FULL, Locale.ENGLISH) ?: "Unknown"
     } catch (e: Exception) {
         "Unknown"
     }
