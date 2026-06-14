@@ -25,6 +25,7 @@ import com.example.calendarapp.ui.theme.TextGray
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopBar(
+    selectedDay: Int,
     selectedMonth: String,
     selectedYear: Int,
     onMonthClick: () -> Unit,
@@ -33,7 +34,11 @@ fun TopBar(
     onSearchQueryChanged: (String) -> Unit
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
-    val todayDay = remember { java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH) }
+    val today = remember { java.util.Calendar.getInstance() }
+    val todayMonth = remember { today.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.ENGLISH).orEmpty() }
+    val isSelectedToday = selectedDay == today.get(java.util.Calendar.DAY_OF_MONTH) &&
+        selectedMonth.equals(todayMonth, ignoreCase = true) &&
+        selectedYear == today.get(java.util.Calendar.YEAR)
 
     Row(
         modifier = Modifier
@@ -104,7 +109,7 @@ fun TopBar(
                         color = Color.White,
                         shape = CircleShape,
                         modifier = Modifier
-                            .border(1.dp, DarkBlue.copy(alpha = 0.12f), CircleShape)
+                            .border(if (isSelectedToday) 1.dp else 1.5.dp, if (isSelectedToday) DarkBlue.copy(alpha = 0.12f) else Color(0xFF00E5FF).copy(alpha = 0.72f), CircleShape)
                             .clickable { onTodayClick() }
                     ) {
                         Text(

@@ -431,6 +431,7 @@ fun HomeScreen(
                 ) {
                     Column {
                         TopBar(
+                            selectedDay = selectedDay,
                             selectedMonth = selectedMonth,
                             selectedYear = selectedYear,
                             onMonthClick = { showMonthDialog = true },
@@ -1259,7 +1260,7 @@ fun HomeScreen(
                             singleLine = true,
                             modifier = Modifier
                                 .width(90.dp)
-                                .height(52.dp),
+                                .height(56.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = DarkBlue,
                                 unfocusedBorderColor = TextGray.copy(alpha = 0.4f),
