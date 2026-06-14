@@ -528,13 +528,13 @@ fun EventCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = onDelete,
+                onClick = onComplete,
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = "Delete",
-                    tint = Color(0xFFE57373),
+                    imageVector = if (event.isCompleted) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
+                    contentDescription = "Complete",
+                    tint = if (event.isCompleted) Color(0xFF4CAF50) else TextGray,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -602,13 +602,13 @@ fun EventCard(
             }
 
             IconButton(
-                onClick = onComplete,
+                onClick = onDelete,
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    imageVector = if (event.isCompleted) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
-                    contentDescription = "Complete",
-                    tint = if (event.isCompleted) Color(0xFF4CAF50) else TextGray,
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = "Delete",
+                    tint = Color(0xFFE57373),
                     modifier = Modifier.size(20.dp)
                 )
             }
