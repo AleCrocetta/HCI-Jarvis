@@ -185,6 +185,8 @@ class MainActivity : ComponentActivity() {
                             .replace(Regex("""\btutti\s+i\s+giorni\b""", RegexOption.IGNORE_CASE), "every day")
                             .replace(Regex("""\bogni\s+giorno\b""", RegexOption.IGNORE_CASE), "every day")
                             .replace(Regex("""\bgiornalmente\b""", RegexOption.IGNORE_CASE), "every day")
+                            .replace(Regex("""\btutt[ie]\s+(?:i|le)\s+(lun|marted|mercoled|gioved|venerd)[iì]\b""", RegexOption.IGNORE_CASE), "every ${'$'}1i")
+                            .replace(Regex("""\btutt[ie]\s+(?:i|le)\s+(sabato|domenica)\b""", RegexOption.IGNORE_CASE), "every ${'$'}1")
                             .replace(Regex("""\bluned[iì]\b""", RegexOption.IGNORE_CASE), "monday")
                             .replace(Regex("""\bmarted[iì]\b""", RegexOption.IGNORE_CASE), "tuesday")
                             .replace(Regex("""\bmercoled[iì]\b""", RegexOption.IGNORE_CASE), "wednesday")

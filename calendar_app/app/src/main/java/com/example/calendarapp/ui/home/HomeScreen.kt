@@ -79,6 +79,8 @@ private enum class AiFeedbackState(val label: String) {
 private fun classifyAiFeedback(message: String): AiFeedbackState {
     val normalized = message.lowercase()
     return when {
+        normalized.startsWith("success:") ->
+            AiFeedbackState.Success
         listOf("collision", "collides", "overlap", "conflict", "sovrappone", "conflitto").any { it in normalized } ->
             AiFeedbackState.Collision
         listOf("memory updated", "memory update").any { it in normalized } ->
