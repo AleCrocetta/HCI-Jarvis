@@ -1,6 +1,6 @@
 ,# Calendar Android App
 
-This is a beautiful, component-based Calendar Android app built with **Jetpack Compose** and **Room Database**. It was created as part of the HCI Exam project.
+This is a Calendar Android app built with **Jetpack Compose** and **Room Database**. It was created as part of the HCI Exam project.
 
 ## Features
 - **Modern UI:** Built fully with Jetpack Compose following modern design principles.
