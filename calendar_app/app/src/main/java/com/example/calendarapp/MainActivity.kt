@@ -50,6 +50,64 @@ private data class PendingEventCollision(
     val isModification: Boolean
 )
 
+private const val SAVED_EVENTS_KEY = "saved_calendar_events"
+
+private fun jsonArray(values: List<String>): org.json.JSONArray {
+    return org.json.JSONArray().apply {
+        values.forEach { put(it) }
+    }
+}
+
+private fun jsonStringList(array: org.json.JSONArray?): List<String> {
+    if (array == null) return emptyList()
+    return List(array.length()) { index -> array.optString(index) }.filter { it.isNotBlank() }
+}
+
+private fun encodeSavedEvents(events: List<CalendarEvent>): String {
+    return org.json.JSONArray().apply {
+        events.filterNot { it.id.startsWith("memory:") }.forEach { event ->
+            put(org.json.JSONObject().apply {
+                put("id", event.id)
+                put("day", event.day)
+                put("month", event.month)
+                put("year", event.year)
+                put("title", event.title)
+                put("time", event.time)
+                put("priority", event.priority)
+                put("link", event.link.orEmpty())
+                put("fileNames", jsonArray(event.fileNames))
+                put("fileUris", jsonArray(event.fileUris))
+                put("showDelete", event.showDelete)
+                put("isCompleted", event.isCompleted)
+            })
+        }
+    }.toString()
+}
+
+private fun decodeSavedEvents(value: String): List<CalendarEvent> {
+    if (value.isBlank()) return emptyList()
+    return runCatching {
+        val array = org.json.JSONArray(value)
+        List(array.length()) { index ->
+            val event = array.getJSONObject(index)
+            CalendarEvent(
+                id = event.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+                day = event.optInt("day"),
+                month = event.optString("month", "January"),
+                year = event.optInt("year", Calendar.getInstance().get(Calendar.YEAR)),
+                title = event.optString("title"),
+                time = event.optString("time"),
+                priority = event.optString("priority", "Medium"),
+                link = event.optString("link").takeIf { it.isNotBlank() },
+                fileNames = jsonStringList(event.optJSONArray("fileNames")),
+                fileUris = jsonStringList(event.optJSONArray("fileUris")),
+                showDelete = event.optBoolean("showDelete", true),
+                isCompleted = event.optBoolean("isCompleted", false)
+            )
+        }.filter { it.title.isNotBlank() && it.time.isNotBlank() }
+    }.getOrElse { emptyList() }
+}
+
 class MainActivity : ComponentActivity() {
 
     private val speechRecognizerLauncher = registerForActivityResult(
@@ -112,7 +170,14 @@ class MainActivity : ComponentActivity() {
                     }
                     
                     val eventsList = remember {
-                        mutableStateListOf<CalendarEvent>()
+                        mutableStateListOf<CalendarEvent>().apply {
+                            addAll(decodeSavedEvents(memoryStore.getString(SAVED_EVENTS_KEY, "").orEmpty()))
+                        }
+                    }
+                    LaunchedEffect(eventsList.toList()) {
+                        memoryStore.edit()
+                            .putString(SAVED_EVENTS_KEY, encodeSavedEvents(eventsList))
+                            .apply()
                     }
                     val monthsList = listOf(
                         "January", "February", "March", "April", "May", "June",
