@@ -213,6 +213,12 @@ class JarvisViewModel : ViewModel() {
             .containsMatchIn(normalized)
     }
 
+    private fun isDeleteEventPrompt(prompt: String): Boolean {
+        val normalized = prompt.lowercase()
+        return Regex("""\b(delete|remove|cancel|elimina|rimuovi|cancella|annulla)\b""")
+            .containsMatchIn(normalized)
+    }
+
     private suspend fun sendToOpenAiCompatibleApi(
         baseUrl: String,
         apiKey: String,
@@ -408,6 +414,7 @@ class JarvisViewModel : ViewModel() {
 
                 var responseText = responsePair.first
                 val functionCalls = responsePair.second
+                val allowDeleteEvent = isDeleteEventPrompt(prompt)
 
                 functionCalls.forEach { call ->
                     when (call.name) {
@@ -434,7 +441,7 @@ class JarvisViewModel : ViewModel() {
                         "delete_event" -> {
                             val args = call.args
                             val id = args["eventId"]?.toString() ?: args.values.firstOrNull()?.toString()
-                            if (id != null) {
+                            if (id != null && allowDeleteEvent) {
                                 onRemoveEvent(id)
                                 if (responseText.isBlank()) responseText = "Deleted the requested event."
                             }

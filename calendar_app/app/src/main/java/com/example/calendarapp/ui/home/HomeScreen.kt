@@ -91,6 +91,18 @@ private fun classifyAiFeedback(message: String): AiFeedbackState {
     }
 }
 
+private fun eventStartMinutes(time: String): Int? {
+    val startTime = time.substringBefore("-").trim()
+    val match = Regex("""^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$""", RegexOption.IGNORE_CASE).find(startTime) ?: return null
+    var hour = match.groupValues[1].toIntOrNull() ?: return null
+    val minute = match.groupValues[2].ifBlank { "00" }.toIntOrNull() ?: return null
+    val marker = match.groupValues[3].uppercase()
+    if (hour !in 1..12 || minute !in 0..59) return null
+    if (marker == "PM" && hour != 12) hour += 12
+    if (marker == "AM" && hour == 12) hour = 0
+    return hour * 60 + minute
+}
+
 @Composable
 private fun SearchResultsPanel(
     events: List<CalendarEvent>,
@@ -202,17 +214,21 @@ fun HomeScreen(
     onReplaceExistingEvent: () -> Unit = {},
     onRescheduleExistingEvent: () -> Unit = {}
 ) {
-    val filteredEvents = events.filter { event ->
-        val yearMatches = event.year == selectedYear
-        val monthMatches = event.month.equals(selectedMonth, ignoreCase = true)
-        val dayMatches = viewAllEvents || event.day == selectedDay
-        val searchMatches = searchQuery.isBlank() || event.title.contains(searchQuery, ignoreCase = true)
-        if (searchQuery.isBlank()) {
-            yearMatches && monthMatches && dayMatches
-        } else {
-            searchMatches
+    val filteredEvents = events.withIndex()
+        .filter { indexedEvent ->
+            val event = indexedEvent.value
+            val yearMatches = event.year == selectedYear
+            val monthMatches = event.month.equals(selectedMonth, ignoreCase = true)
+            val dayMatches = viewAllEvents || event.day == selectedDay
+            val searchMatches = searchQuery.isBlank() || event.title.contains(searchQuery, ignoreCase = true)
+            if (searchQuery.isBlank()) {
+                yearMatches && monthMatches && dayMatches
+            } else {
+                searchMatches
+            }
         }
-    }
+        .sortedWith(compareBy({ eventStartMinutes(it.value.time) ?: Int.MAX_VALUE }, { it.index }))
+        .map { it.value }
     val isSearching = searchQuery.isNotBlank()
     val focusManager = LocalFocusManager.current
 
